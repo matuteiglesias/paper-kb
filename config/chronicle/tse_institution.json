@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "institution": {
+    "id": "tse",
+    "display_name": "Toulouse School of Economics",
+    "aliases": ["Toulouse School of Economics", "TSE"],
+    "openalex_id": "https://openalex.org/I4210092408",
+    "ror_id": "https://ror.org/00ff5f522",
+    "identifiers_evidence": [
+      "https://api.openalex.org/institutions?search=Toulouse%20School%20of%20Economics"
+    ]
+  },
+  "coverage": {"from_date": "2010-01-01", "through_date": "2026-09-13"},
+  "source_policy": {
+    "first_party_required_for_membership_when_available": true,
+    "external_metadata_is_enrichment": true
+  },
+  "first_party_surface": "https://publications.ut-capitole.fr/view/divisions/tse/<year>.html"
+}
