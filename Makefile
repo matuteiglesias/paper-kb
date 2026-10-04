@@ -26,7 +26,17 @@ EXPORT_CATALOG_RECORDS_CMD = python3 -m pipeline.projections.catalog_records --c
 EXPORT_REVIEW_CSV_CMD = python3 -m backend.exports.export_review_csv --corpus $(CORPUS)
 API_CORPUS_CMD = PAPER_KB_CORPUS=$(CORPUS) PAPER_KB_CHUNK_SETS_DIR=corpora/$(CORPUS)/chunk_sets STORAGE_BACKEND=chunk_set uvicorn backend.app.main:app --reload --port $(PORT)
 
-.PHONY: help corpus-register corpus-register-dry-run corpus-check-input corpus-check-grobid corpus-build corpus-fixture corpus-doctor corpus-grobid corpus-parse corpus-validate corpus-parse-validate contract-review-record contract-catalog-record architecture-check read-model-identity export-review-records export-catalog-records export-review-catalog-records export-review-csv export-review api-corpus frontend-prepare frontend-dev kill-port legacy-smoke legacy-run-all legacy-run
+.PHONY: help corpus-register corpus-register-dry-run corpus-check-input corpus-check-grobid corpus-build corpus-fixture corpus-doctor corpus-grobid corpus-parse corpus-validate corpus-parse-validate producer-receipt-corpus producer-receipt-grounded-summaries contract-review-record contract-catalog-record architecture-check read-model-identity export-review-records export-catalog-records export-review-catalog-records producer-receipt-projections producer-receipt-tse export-review-csv export-review api-corpus frontend-prepare frontend-dev kill-port legacy-smoke legacy-run-all legacy-run
+
+PROJECTS_ROOT ?=
+
+producer-receipt-corpus:
+	@test -n "$(PROJECTS_ROOT)" || { echo "PROJECTS_ROOT is required" >&2; exit 2; }
+	python3 "$(PROJECTS_ROOT)/scripts/producer_local_receipt.py" --producer producer.manual.paper-kb-corpus --cwd "$(CURDIR)" -- make corpus-parse-validate CORPUS="$(CORPUS)"
+
+producer-receipt-grounded-summaries:
+	@test -n "$(PROJECTS_ROOT)" || { echo "PROJECTS_ROOT is required" >&2; exit 2; }
+	python3 "$(PROJECTS_ROOT)/scripts/producer_local_receipt.py" --producer producer.manual.paper-kb-grounded-summaries --cwd "$(CURDIR)" -- python3 -m backend.exports.generate_summaries --corpus "$(CORPUS)" $(if $(PROVIDER),--provider "$(PROVIDER)",) $(if $(LIMIT),--limit "$(LIMIT)",) $(if $(FORCE),--force,) $(if $(MODEL),--model "$(MODEL)",) $(if $(MODE),--mode "$(MODE)",) $(if $(AGENT_MODE),--agent-mode "$(AGENT_MODE)",)
 
 help:
 	@echo "Operator targets (run from repo root):"
@@ -135,6 +145,14 @@ export-catalog-records:
 	$(EXPORT_CATALOG_RECORDS_CMD)
 
 export-review-catalog-records: export-review-records export-catalog-records
+
+producer-receipt-projections:
+	@test -n "$(PROJECTS_ROOT)" || { echo "PROJECTS_ROOT is required" >&2; exit 2; }
+	python3 "$(PROJECTS_ROOT)/scripts/producer_local_receipt.py" --producer producer.manual.paper-kb-projections --cwd "$(CURDIR)" --evidence-changed "corpora/$(CORPUS)/review/paper.review-record.v1.jsonl" --evidence-changed "corpora/$(CORPUS)/catalog/paper.catalog-record.v1.jsonl" --enforce-evidence -- make export-review-catalog-records CORPUS="$(CORPUS)"
+
+producer-receipt-tse:
+	@test -n "$(PROJECTS_ROOT)" || { echo "PROJECTS_ROOT is required" >&2; exit 2; }
+	python3 "$(PROJECTS_ROOT)/scripts/producer_local_receipt.py" --producer producer.manual.tse-research-chronicle --cwd "$(CURDIR)" --evidence-manifest artifacts/institution-chronicle/tse/manifest.json --evidence-changed artifacts/institution-chronicle/tse/manifest.json --evidence-changed artifacts/institution-chronicle/tse/qa.json --evidence-json 'artifacts/institution-chronicle/tse/qa.json#/pass=true' --enforce-evidence -- python3 scripts/tse_chronicle.py all
 
 export-review-csv:
 	@echo "[COMPATIBILITY] CSV review export; preferred machine interface for review is export-review-records."
