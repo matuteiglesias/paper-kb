@@ -26,7 +26,7 @@ EXPORT_CATALOG_RECORDS_CMD = python3 -m pipeline.projections.catalog_records --c
 EXPORT_REVIEW_CSV_CMD = python3 -m backend.exports.export_review_csv --corpus $(CORPUS)
 API_CORPUS_CMD = PAPER_KB_CORPUS=$(CORPUS) PAPER_KB_CHUNK_SETS_DIR=corpora/$(CORPUS)/chunk_sets STORAGE_BACKEND=chunk_set uvicorn backend.app.main:app --reload --port $(PORT)
 
-.PHONY: help corpus-register corpus-register-dry-run corpus-check-input corpus-check-grobid corpus-build corpus-fixture corpus-doctor corpus-grobid corpus-parse corpus-validate contract-review-record contract-catalog-record architecture-check read-model-identity export-review-records export-catalog-records export-review-csv export-review api-corpus frontend-prepare frontend-dev kill-port legacy-smoke legacy-run-all legacy-run
+.PHONY: help corpus-register corpus-register-dry-run corpus-check-input corpus-check-grobid corpus-build corpus-fixture corpus-doctor corpus-grobid corpus-parse corpus-validate corpus-parse-validate contract-review-record contract-catalog-record architecture-check read-model-identity export-review-records export-catalog-records export-review-catalog-records export-review-csv export-review api-corpus frontend-prepare frontend-dev kill-port legacy-smoke legacy-run-all legacy-run
 
 help:
 	@echo "Operator targets (run from repo root):"
@@ -110,6 +110,8 @@ corpus-validate:
 	echo $(VALIDATE_CMD)
 	$(VALIDATE_CMD)
 
+corpus-parse-validate: corpus-parse corpus-validate
+
 contract-review-record:
 	python3 tests/test_review_record_contract.py
 
@@ -130,6 +132,8 @@ export-review-records:
 export-catalog-records:
 	echo $(EXPORT_CATALOG_RECORDS_CMD)
 	$(EXPORT_CATALOG_RECORDS_CMD)
+
+export-review-catalog-records: export-review-records export-catalog-records
 
 export-review-csv:
 	@echo "[COMPATIBILITY] CSV review export; preferred machine interface for review is export-review-records."
