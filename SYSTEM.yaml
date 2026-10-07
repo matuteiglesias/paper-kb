@@ -2,7 +2,7 @@
 schema_version: 1
 id: kb.paper.system
 repository:
-  id: repo.paper-kb
+  id: repo.knowledge-base-app
   github: matuteiglesias/paper-kb
 domain: knowledge
 system: kb.paper
