@@ -1,0 +1,346 @@
+{
+  "authority_note": "This manifest governs the exact registered PDF byte set; it does not grant publication rights.",
+  "corpus_id": "rg019-thesis-curated-primary-20261028",
+  "files": [
+    {
+      "registered_filename": "W2995908311.pdf",
+      "sha256": "dd4095fa93c84f079b9a5f16c95b8dcb9f2245f9f40cd9699a26dd302a200921",
+      "size_bytes": 1140016,
+      "source_relative_path": "W2995908311.pdf"
+    },
+    {
+      "registered_filename": "W3033941201.pdf",
+      "sha256": "27386bbef314734971319c3259386a6d7e4fcd3512226ec0f2f087c5e9fbc6a9",
+      "size_bytes": 907908,
+      "source_relative_path": "W3033941201.pdf"
+    },
+    {
+      "registered_filename": "W3107498884.pdf",
+      "sha256": "58d089aa728541e0dc0c4f05d6448e3d4014795fc2efa87b009f81445ed30074",
+      "size_bytes": 3559875,
+      "source_relative_path": "W3107498884.pdf"
+    },
+    {
+      "registered_filename": "W3167432420.pdf",
+      "sha256": "58f14c5a785845d4e050648075f65b955f179724c94f28e00dfc994ae70a17ef",
+      "size_bytes": 2043172,
+      "source_relative_path": "W3167432420.pdf"
+    },
+    {
+      "registered_filename": "W4221149191.pdf",
+      "sha256": "6126a99613ef00e0f74521dc58a82a8cdf8bfad6dfacf75dd04a37ca118024c2",
+      "size_bytes": 1681638,
+      "source_relative_path": "W4221149191.pdf"
+    },
+    {
+      "registered_filename": "W4306311938.pdf",
+      "sha256": "a37c4414d93382670439ca49e24d4772d90fe901f6be4f101848970a6e06ddf1",
+      "size_bytes": 3183117,
+      "source_relative_path": "W4306311938.pdf"
+    },
+    {
+      "registered_filename": "W4306399617.pdf",
+      "sha256": "310bccbc8cba302825cd8158a1cf0757c7562e544dacc37abe80133372627768",
+      "size_bytes": 744218,
+      "source_relative_path": "W4306399617.pdf"
+    },
+    {
+      "registered_filename": "W4308985050.pdf",
+      "sha256": "806f7c2cd22b5651d2162a728abe93f01375cd40b25302b309e55870b48b2eca",
+      "size_bytes": 560822,
+      "source_relative_path": "W4308985050.pdf"
+    },
+    {
+      "registered_filename": "W4316469537.pdf",
+      "sha256": "159ee0c59aa154d26bbc50b743ebb3cfabb636476e00b7c63b39c53702a8ae4f",
+      "size_bytes": 1928589,
+      "source_relative_path": "W4316469537.pdf"
+    },
+    {
+      "registered_filename": "W4318688346.pdf",
+      "sha256": "def40b2655b905ee8240fb49d8adf73c87b3cef3849247f7f242017efe74d654",
+      "size_bytes": 1758960,
+      "source_relative_path": "W4318688346.pdf"
+    },
+    {
+      "registered_filename": "W4362697535.pdf",
+      "sha256": "8207d5a2bacaed0f66aa7f0bc22922e94863bc4969ebe2e56029b8611e9f9f0e",
+      "size_bytes": 506065,
+      "source_relative_path": "W4362697535.pdf"
+    },
+    {
+      "registered_filename": "W4378895545.pdf",
+      "sha256": "c14a9afcd3bc65c426711a0d2dfa79b2c90f12f104c0b53f8d2500e26374f8ca",
+      "size_bytes": 744953,
+      "source_relative_path": "W4378895545.pdf"
+    },
+    {
+      "registered_filename": "W4379208503.pdf",
+      "sha256": "ab592eb5f8aa335e80160322d8f1828e10a3f6ebd9a197f8829ff4e5f0fd84dd",
+      "size_bytes": 2395651,
+      "source_relative_path": "W4379208503.pdf"
+    },
+    {
+      "registered_filename": "W4379376546.pdf",
+      "sha256": "34888b209612fffde232a6a07306021b9141b4bd99921482239f9ccb0070f1c4",
+      "size_bytes": 1220824,
+      "source_relative_path": "W4379376546.pdf"
+    },
+    {
+      "registered_filename": "W4379646169.pdf",
+      "sha256": "8b4f87b7ca5f389fd0037fe723f1be5d457b05666a26ca8a7498c01e77606a00",
+      "size_bytes": 3530991,
+      "source_relative_path": "W4379646169.pdf"
+    },
+    {
+      "registered_filename": "W4389210608.pdf",
+      "sha256": "e65aac070f25cf98abb489e1aeb3ff4820b40545e2e77a1620c7cfea8b1b491e",
+      "size_bytes": 2490033,
+      "source_relative_path": "W4389210608.pdf"
+    },
+    {
+      "registered_filename": "W4389433377.pdf",
+      "sha256": "25f05a0a7763b223c37d87d3efaf73e7b104ea7ff5ac479e058a98306d6cced9",
+      "size_bytes": 4318517,
+      "source_relative_path": "W4389433377.pdf"
+    },
+    {
+      "registered_filename": "W4390398603.pdf",
+      "sha256": "0984ba40084cad36c5bb5d14bfedfbb7d6acdf17e678df758152d6210866cf33",
+      "size_bytes": 749342,
+      "source_relative_path": "W4390398603.pdf"
+    },
+    {
+      "registered_filename": "W4391593114.pdf",
+      "sha256": "7f106846c1645b8804b4a3b6d39ce4569024d2a388438006f3fd55be8e867dae",
+      "size_bytes": 2997717,
+      "source_relative_path": "W4391593114.pdf"
+    },
+    {
+      "registered_filename": "W4392452606.pdf",
+      "sha256": "c9ab425d112fcb62ab97de2f7d15ad6b442ca1ab4bdd3b70db769269b87b6fbe",
+      "size_bytes": 6611781,
+      "source_relative_path": "W4392452606.pdf"
+    },
+    {
+      "registered_filename": "W4393250396.pdf",
+      "sha256": "0270fcb2b0322c5fdab85f12acc8ca6730e8d101329496c431d4c019d01cd4b1",
+      "size_bytes": 1455298,
+      "source_relative_path": "W4393250396.pdf"
+    },
+    {
+      "registered_filename": "W4395004587.pdf",
+      "sha256": "b9e7c6915342237fe10947ca6e3fb66ff87324dcfa8ad2f1eada01be9e07a7e8",
+      "size_bytes": 1957980,
+      "source_relative_path": "W4395004587.pdf"
+    },
+    {
+      "registered_filename": "W4399454859.pdf",
+      "sha256": "bf61ac89e05038d9a1552a1c1750e6b4ce604861e72f3ff23adc4c2d3e13e000",
+      "size_bytes": 2157889,
+      "source_relative_path": "W4399454859.pdf"
+    },
+    {
+      "registered_filename": "W4401369332.pdf",
+      "sha256": "0e3ab43b7c12b08c3d6226bea0dc29b9b00b35d10434b019798098105d40a1f9",
+      "size_bytes": 1238029,
+      "source_relative_path": "W4401369332.pdf"
+    },
+    {
+      "registered_filename": "W4402858274.pdf",
+      "sha256": "fd7650d5b5997a19be82ecbd187aa363d402ea39dcb8d575912eaa7c20736e80",
+      "size_bytes": 8238298,
+      "source_relative_path": "W4402858274.pdf"
+    },
+    {
+      "registered_filename": "W4402875557.pdf",
+      "sha256": "e59b9afa1a8281ad5673497211014a1b1abdd1997ac985363d4db835c6879387",
+      "size_bytes": 4763577,
+      "source_relative_path": "W4402875557.pdf"
+    },
+    {
+      "registered_filename": "W4403866896.pdf",
+      "sha256": "db91a26892ecc93f0c2f9e76e2f96ba226cfcbb60ff9e37bc310836e751f1f72",
+      "size_bytes": 1793070,
+      "source_relative_path": "W4403866896.pdf"
+    },
+    {
+      "registered_filename": "W4404131785.pdf",
+      "sha256": "1b6fa5cb5d5eece8ed867dc6113de0931d5b7aae239da5e4107886819d00fb7b",
+      "size_bytes": 5716469,
+      "source_relative_path": "W4404131785.pdf"
+    },
+    {
+      "registered_filename": "W4405434155.pdf",
+      "sha256": "83683b07d50dff95be10021d0e9e1cf8648b5c6c588c6dfe6fabb478d805fb81",
+      "size_bytes": 8992499,
+      "source_relative_path": "W4405434155.pdf"
+    },
+    {
+      "registered_filename": "W4407556112.pdf",
+      "sha256": "3695f773a9d6d59581f2450e4d6457e598286a680400fe489d942c61dd8f5495",
+      "size_bytes": 770564,
+      "source_relative_path": "W4407556112.pdf"
+    },
+    {
+      "registered_filename": "W4407632252.pdf",
+      "sha256": "04a491ad166c4ab0b66004da3d7c11d7084878a0cdcb83816c8a48278f36eb90",
+      "size_bytes": 740239,
+      "source_relative_path": "W4407632252.pdf"
+    },
+    {
+      "registered_filename": "W4407677790.pdf",
+      "sha256": "2742e958d645774394bf5f582a3e3df7968b8bbba5b5905eb27c87c5ffcef86a",
+      "size_bytes": 1407061,
+      "source_relative_path": "W4407677790.pdf"
+    },
+    {
+      "registered_filename": "W4410883797.pdf",
+      "sha256": "0f651c0cde45423fe238541e59358550218b1cabd94ff9fcfc4f5136a24065a4",
+      "size_bytes": 1874953,
+      "source_relative_path": "W4410883797.pdf"
+    },
+    {
+      "registered_filename": "W4411854811.pdf",
+      "sha256": "4552ac7897d25c9c4438a7666592e03a133c2db9199c289bc3f06f72b76a191d",
+      "size_bytes": 2259816,
+      "source_relative_path": "W4411854811.pdf"
+    },
+    {
+      "registered_filename": "W4411928358.pdf",
+      "sha256": "268e32f112dbfb7c79a8b989c5eb28927c3fc75ed5d90ceedae88bf4e7522d5a",
+      "size_bytes": 1038901,
+      "source_relative_path": "W4411928358.pdf"
+    },
+    {
+      "registered_filename": "W4416344211.pdf",
+      "sha256": "f3f34d5cf738cc63300546a9987c6c536a40b464d2eee7d2148b43d4dd6ca040",
+      "size_bytes": 5062601,
+      "source_relative_path": "W4416344211.pdf"
+    },
+    {
+      "registered_filename": "W4416453096.pdf",
+      "sha256": "77eb21f5ada0dfff07d2b0aa7229b7a4446cb8b0e467bf90df03186682beab24",
+      "size_bytes": 697126,
+      "source_relative_path": "W4416453096.pdf"
+    },
+    {
+      "registered_filename": "W4417504404.pdf",
+      "sha256": "8f40928949e8b0ea023810ea1640de2b1830cd9ab8ed63f80748afd0c71cda76",
+      "size_bytes": 3817729,
+      "source_relative_path": "W4417504404.pdf"
+    },
+    {
+      "registered_filename": "W7116798038.pdf",
+      "sha256": "8005b7fd9f5e0a48ee0bbbcf4c5045becab456e81b9382823c30042a34c881af",
+      "size_bytes": 1423480,
+      "source_relative_path": "W7116798038.pdf"
+    },
+    {
+      "registered_filename": "W7116906193.pdf",
+      "sha256": "94c7725e9191a41968af9a9ad0d8c3d8ce7a9667240f7c84a81b9cab9da8f35e",
+      "size_bytes": 1609680,
+      "source_relative_path": "W7116906193.pdf"
+    },
+    {
+      "registered_filename": "W7128049263.pdf",
+      "sha256": "8ecf7b1b4c0c4666e106a90d4cc3a287b5f42525631df76a8161a33aeda5dd69",
+      "size_bytes": 494050,
+      "source_relative_path": "W7128049263.pdf"
+    },
+    {
+      "registered_filename": "W7129109926.pdf",
+      "sha256": "a3ee583bdbef293dec845fc6bccc5b12a4d48dfa5676da747cafeea723486d56",
+      "size_bytes": 1955344,
+      "source_relative_path": "W7129109926.pdf"
+    },
+    {
+      "registered_filename": "W7157750901.pdf",
+      "sha256": "5253e6524d33b26825b4aa182d936f004203f4b98af53fa5c68604c1139124fe",
+      "size_bytes": 8004934,
+      "source_relative_path": "W7157750901.pdf"
+    },
+    {
+      "registered_filename": "W7162569658.pdf",
+      "sha256": "c93388f72f96cb409a03593656381fd1dbef83622b88ece9ad6d3a0c7d409d7e",
+      "size_bytes": 1877995,
+      "source_relative_path": "W7162569658.pdf"
+    },
+    {
+      "registered_filename": "W7162857574.pdf",
+      "sha256": "c32b384aea171921eb5f30d2736b14b07f96bfed5c0335bab21a3665bb438fba",
+      "size_bytes": 1155335,
+      "source_relative_path": "W7162857574.pdf"
+    },
+    {
+      "registered_filename": "W7165855220.pdf",
+      "sha256": "30a3810889c0dae3f6f1357584f9cc14b99b4b9dfbd6f731798d86e7a1b899e7",
+      "size_bytes": 4076124,
+      "source_relative_path": "W7165855220.pdf"
+    },
+    {
+      "registered_filename": "W7166854859.pdf",
+      "sha256": "f3c87c1358be22c6074cb38a389a208e397c4425895d787a5f3260dc84ff3d21",
+      "size_bytes": 665562,
+      "source_relative_path": "W7166854859.pdf"
+    },
+    {
+      "registered_filename": "W7170604100.pdf",
+      "sha256": "f992d707d4af5688d794be27c60bb1a84c4476e37d4d1e31a42605a71a29cad3",
+      "size_bytes": 545041,
+      "source_relative_path": "W7170604100.pdf"
+    },
+    {
+      "registered_filename": "W7171811628.pdf",
+      "sha256": "499ed59edb1a74156c84fbb2a0b187e5d57832c5b56190b3d595a74c0b3df4d4",
+      "size_bytes": 1498663,
+      "source_relative_path": "W7171811628.pdf"
+    },
+    {
+      "registered_filename": "W7205013414.pdf",
+      "sha256": "3d3b0762e9790458036a0b8df623600d6746983c2cb24386f9eb77a4fc676d4b",
+      "size_bytes": 550083,
+      "source_relative_path": "W7205013414.pdf"
+    },
+    {
+      "registered_filename": "W7205457712.pdf",
+      "sha256": "f469cbc7659c9ef27a717d0e9e7a1934f95c82778c16b364e4e1f2a7047b8179",
+      "size_bytes": 3038396,
+      "source_relative_path": "W7205457712.pdf"
+    },
+    {
+      "registered_filename": "W7208824807.pdf",
+      "sha256": "385fddea7399ddd5f3262d05ac72b6e67db16fee7ef2148551b2cb5654ad9325",
+      "size_bytes": 992312,
+      "source_relative_path": "W7208824807.pdf"
+    },
+    {
+      "registered_filename": "W7212160866.pdf",
+      "sha256": "d3aeb95638abb1dbf8c84901ddb622bc2111173fec7c010504da74fed46ff161",
+      "size_bytes": 1364307,
+      "source_relative_path": "W7212160866.pdf"
+    },
+    {
+      "registered_filename": "W7216977805.pdf",
+      "sha256": "b4c5d2990cc2c8717de2339e92218d6f3f62f1eab4a7fde75f5e3a476d96ec81",
+      "size_bytes": 1376825,
+      "source_relative_path": "W7216977805.pdf"
+    },
+    {
+      "registered_filename": "W7223463424.pdf",
+      "sha256": "6ac34ba0c9a8c80d824328e57eb7a29c078047c582e5217d09054d7d5d579733",
+      "size_bytes": 3282075,
+      "source_relative_path": "W7223463424.pdf"
+    }
+  ],
+  "input_set_sha256": "3a28f3e50038a0b77f7d493163c7af1256174ee283b6504ea20763a3abd67073",
+  "materialization": "copy",
+  "pdf_count": 55,
+  "recursive_discovery": true,
+  "registered_at_utc": "2026-10-28T21:16:38.311100Z",
+  "schema_id": "paper-kb.corpus-source-manifest",
+  "schema_version": 1,
+  "source_kind": "approved-local-pdf-directory",
+  "source_path_recorded": false,
+  "total_bytes": 130966494
+}
