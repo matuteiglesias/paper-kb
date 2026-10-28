@@ -1,0 +1,124 @@
+{
+  "authority_note": "This manifest governs the exact registered PDF byte set; it does not grant publication rights.",
+  "corpus_id": "rg019-openalex-wave02-20261028",
+  "files": [
+    {
+      "registered_filename": "W4221148821.pdf",
+      "sha256": "736cf764fe5f222cf20578093b1730b55aa8edc1988466de1a00e9f7f3dd05fa",
+      "size_bytes": 1854227,
+      "source_relative_path": "W4221148821.pdf"
+    },
+    {
+      "registered_filename": "W4221150208.pdf",
+      "sha256": "71ba2157829b261f8cc322a70ef31953ddbbf5f2bd85e79f06e8cc513cc51e64",
+      "size_bytes": 1366138,
+      "source_relative_path": "W4221150208.pdf"
+    },
+    {
+      "registered_filename": "W4319048508.pdf",
+      "sha256": "64ce853551ac50ae6f330ef4f10fc6af0914acfc1872c0f982d6ca3cbdd6d158",
+      "size_bytes": 3554458,
+      "source_relative_path": "W4319048508.pdf"
+    },
+    {
+      "registered_filename": "W4360618164.pdf",
+      "sha256": "222a3561cc65c6dcc6c970182c746f09d8df2a9eccf52715f545a109835c60b7",
+      "size_bytes": 2502957,
+      "source_relative_path": "W4360618164.pdf"
+    },
+    {
+      "registered_filename": "W4380356399.pdf",
+      "sha256": "30794c31c568dbdf35a94b381d3ae6965e59a5804977bbe1dde693eb7fa0c47c",
+      "size_bytes": 2279366,
+      "source_relative_path": "W4380356399.pdf"
+    },
+    {
+      "registered_filename": "W4388991270.pdf",
+      "sha256": "4b655b6d31220206f54eeb997435e16a271fdbf8f7964956071082b98497de63",
+      "size_bytes": 3181600,
+      "source_relative_path": "W4388991270.pdf"
+    },
+    {
+      "registered_filename": "W4389521166.pdf",
+      "sha256": "b0541c6df40324de54bc2fef413348792fdaa0704b85ee9820b1f277d5f876c1",
+      "size_bytes": 733691,
+      "source_relative_path": "W4389521166.pdf"
+    },
+    {
+      "registered_filename": "W4395053438.pdf",
+      "sha256": "49d8eb004e8b683cd56715f9105355591b66308054c8576de959dc3b7f206935",
+      "size_bytes": 1679168,
+      "source_relative_path": "W4395053438.pdf"
+    },
+    {
+      "registered_filename": "W4403799371.pdf",
+      "sha256": "5a034bedccc76a1df7471cdcd2980a387c01741cb537dd633889c296e1d2cd4e",
+      "size_bytes": 935047,
+      "source_relative_path": "W4403799371.pdf"
+    },
+    {
+      "registered_filename": "W4406781060.pdf",
+      "sha256": "3d5ef00282f3c76f9f359f671046980bf02eadc6b0767f1bdae1ec4e5c4bdbcf",
+      "size_bytes": 8074271,
+      "source_relative_path": "W4406781060.pdf"
+    },
+    {
+      "registered_filename": "W4410085274.pdf",
+      "sha256": "9dbb2f04a347db2a436b9e8399773e4ee9db25ed56a62ef29a252c3e5f9104e7",
+      "size_bytes": 2476110,
+      "source_relative_path": "W4410085274.pdf"
+    },
+    {
+      "registered_filename": "W4412689194.pdf",
+      "sha256": "3fbab5525e697092096377b442768464e23fcc43b6d48e19b488125e48c00990",
+      "size_bytes": 3005315,
+      "source_relative_path": "W4412689194.pdf"
+    },
+    {
+      "registered_filename": "W4415254724.pdf",
+      "sha256": "96e28c660b27ea510b90af846f1cc8a86b4c7052762b484c9b895bce2c05bc69",
+      "size_bytes": 7708941,
+      "source_relative_path": "W4415254724.pdf"
+    },
+    {
+      "registered_filename": "W4417469655.pdf",
+      "sha256": "ad38b95a1f10aa12dfdef2d1f784f231f3667986084cc60c77d865678afcd363",
+      "size_bytes": 1475602,
+      "source_relative_path": "W4417469655.pdf"
+    },
+    {
+      "registered_filename": "W7125598625.pdf",
+      "sha256": "af17d0575662aecc9be736f7058efb37efc77f831b1c155cbdca054c671759ec",
+      "size_bytes": 2595022,
+      "source_relative_path": "W7125598625.pdf"
+    },
+    {
+      "registered_filename": "W7138990919.pdf",
+      "sha256": "8813e47b000774b4c34ef03dffd051b58da17169ea9fc827b439b01c5f52e449",
+      "size_bytes": 1096286,
+      "source_relative_path": "W7138990919.pdf"
+    },
+    {
+      "registered_filename": "W7160925203.pdf",
+      "sha256": "95642de5a73a41d43e55748dcb8581f4daa54de1e4cdb670f24dd067e4b05fe7",
+      "size_bytes": 4277856,
+      "source_relative_path": "W7160925203.pdf"
+    },
+    {
+      "registered_filename": "W7221044359.pdf",
+      "sha256": "98599886bab124bf9f860a59256446ff5f6967601de6b9f9b067f1f929da3c0e",
+      "size_bytes": 634195,
+      "source_relative_path": "W7221044359.pdf"
+    }
+  ],
+  "input_set_sha256": "e68998e21099abf6e4bfe90af1d2783699a452f9b126107af308c919706ef178",
+  "materialization": "copy",
+  "pdf_count": 18,
+  "recursive_discovery": true,
+  "registered_at_utc": "2026-10-28T21:02:10.740401Z",
+  "schema_id": "paper-kb.corpus-source-manifest",
+  "schema_version": 1,
+  "source_kind": "approved-local-pdf-directory",
+  "source_path_recorded": false,
+  "total_bytes": 49430250
+}
