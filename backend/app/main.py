@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 # Ensure repo root in path so we can import local modules
@@ -255,17 +255,19 @@ def api_corpus_health(storage: StorageAdapter = Depends(get_storage)):
         warnings=warnings,
     )
 
-@app.get("/api/papers", response_model=PapersList, tags=["papers"], summary="List papers (cache -> storage)")
-def api_list_papers(q: str = "", year: Optional[int] = None, venue: str = "", tag: str = "", status: str = "", offset: int = 0, limit: int = 200, storage: StorageAdapter = Depends(get_storage)):
+@app.get("/api/papers", response_model=PapersList, tags=["papers"], summary="List and filter accepted papers")
+def api_list_papers(q: str = "", year: Optional[int] = None, venue: str = "", tag: str = "", status: str = "", offset: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=1000), storage: StorageAdapter = Depends(get_storage)):
     """
-    Returns the canonical list of papers. Delegate to services.list_papers(storage).
-    The service will handle caches and normalization.
+    Filter accepted paper metadata, then deterministically sort and paginate.
+    Storage adapters own the read cache; status is not a corpus-backed field.
     """
     try:
-        papers = services.list_papers(storage)
-        # v1 filter placeholders (q/year/venue/tag/status); currently no-op if not representable in corpus metadata.
-        sliced = papers[offset: offset + limit]
-        return PapersList(papers=sliced)
+        if status.strip():
+            raise HTTPException(status_code=422, detail="status filtering is not supported by the corpus read model")
+        papers = services.filter_papers(
+            services.list_papers(storage), q=q, year=year, venue=venue, tag=tag
+        )
+        return PapersList(papers=papers[offset: offset + limit], total=len(papers))
     except HTTPException:
         raise
     except Exception as e:
@@ -313,6 +315,8 @@ def api_get_filtered_chunks(paper_id: str, q: str = "", offset: int = 0, limit: 
         return resp
     except services.NotFoundError:
         raise HTTPException(status_code=404, detail="paper not found")
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("api_get_filtered_chunks failed for %s", paper_id)
         raise HTTPException(status_code=500, detail="filtered chunks failed")

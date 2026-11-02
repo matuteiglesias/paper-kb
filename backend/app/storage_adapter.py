@@ -283,7 +283,7 @@ class ChunkSetStorageAdapter(StorageAdapter):
             matches = sum(1 for t in q_tokens if t in tokens)
             score = matches / (1 + len(tokens))
             if score > 0:
-                hits.append({"id": c.get("chunk_id"), "text": c.get("text"), "score": score, "meta": c.get("meta", {}), "paper_id": c.get("paper_id")})
+                hits.append({"id": c.get("chunk_id"), "text": c.get("text"), "score": score, "meta": c.get("meta", {}), "paper_id": c.get("paper_id"), "paper_uid": c.get("paper_uid")})
         return sorted(hits, key=lambda x: x.get("score", 0), reverse=True)[:k]
 
     def counts(self) -> Dict[str, int]:
@@ -477,7 +477,7 @@ class JsonlAdapter:
         for c in candidates:
             s = score_text(c.get("text","") or "")
             if s > 0:
-                hits.append({"id": c["chunk_id"], "text": c["text"], "score": s, "meta": c.get("meta", {}), "paper_id": c.get("paper_id")})
+                hits.append({"id": c["chunk_id"], "text": c["text"], "score": s, "meta": c.get("meta", {}), "paper_id": c.get("paper_id"), "paper_uid": c.get("paper_uid")})
         hits_sorted = sorted(hits, key=lambda x: x.get("score",0), reverse=True)[:k]
         return hits_sorted
 

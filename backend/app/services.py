@@ -17,7 +17,6 @@ Expected StorageAdapter methods (recommended):
 """
 from __future__ import annotations
 import logging
-from threading import Lock
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import uuid
@@ -38,16 +37,15 @@ from fastapi import HTTPException
 from backend.app.storage_adapter import StorageAdapter
 logger = logging.getLogger("backend.app.services")
 
-# --- small module-level cache for papers list (memory only) ---
-_cache_lock = Lock()
-_papers_cache: List[PaperMeta] = []
-_papers_cache_loaded: bool = False
-_papers_cache_ts: Optional[float] = None
-_PAPERS_CACHE_TTL = 60  # seconds, simple TTL to avoid stale forever
-
+# Read caching belongs to the storage adapter (and its accepted corpus), not a
+# process-global service variable shared across independent storage instances.
 
 # --- custom exceptions for clearer control flow ---
 class NotFoundError(Exception):
+    pass
+
+
+class ReadContractError(ValueError):
     pass
 
 
@@ -68,39 +66,53 @@ def _normalize_paper_meta(raw: Dict[str, Any]) -> Optional[PaperMeta]:
 
 
 def _normalize_chunks_from_upstream(upstreams: List[Dict[str, Any]], paper_id: str) -> List[CanonicalChunk]:
+    """Preserve source identity; never silently relabel a passage to its route."""
     out: List[CanonicalChunk] = []
-    for u in upstreams:
+    for raw in upstreams:
+        if not isinstance(raw, dict):
+            raise ReadContractError("chunk record must be a mapping")
+        meta = raw.get("meta") or raw.get("metadata") or {}
+        if not isinstance(meta, dict):
+            raise ReadContractError("chunk metadata must be a mapping")
+        declared_pids = [x for x in (raw.get("paper_id"), meta.get("paper_id")) if x]
+        if any(pid != paper_id for pid in declared_pids):
+            raise ReadContractError("chunk paper_id conflicts with requested paper")
+        declared_uids = [x for x in (raw.get("paper_uid"), meta.get("paper_uid")) if x]
+        if len(set(declared_uids)) > 1:
+            raise ReadContractError("chunk paper_uid conflicts with metadata")
+        record = dict(raw)
+        if "chunk_id" not in record and "id" in record:
+            record["chunk_id"] = record["id"]
         try:
-            # upstream may use "id" alias
-            if "chunk_id" not in u and "id" in u:
-                u = dict(u, chunk_id=u.get("id"))
-            # use chunks_fs.normalize_chunk as single source of truth
-            cc = None
-            if hasattr(chunks_fs, "normalize_chunk"):
-                cc = chunks_fs.normalize_chunk(u, paper_id=paper_id)
-            else:
-                # fallback coercion
-                cc = CanonicalChunk(
-                    chunk_id=str(u.get("chunk_id") or u.get("id") or ""),
-                    paper_id=paper_id,
-                    text=str(u.get("text") or u.get("preview") or ""),
-                    chunk_index=int(u.get("chunk_index") or u.get("meta", {}).get("chunk_index") or 0),
-                    char_len=int(u.get("char_len") or len(u.get("text") or "")),
-                    header_path=u.get("meta", {}).get("header_path") if u.get("meta") else None,
-                    pages=u.get("meta", {}).get("pages") if u.get("meta") else None,
-                    meta=u.get("meta") or {},
-                )
-            if cc:
-                out.append(cc)
-        except Exception:
-            logger.exception("failed normalize upstream chunk for paper=%s upstream=%s", paper_id, u)
-            continue
+            chunk = chunks_fs.normalize_chunk(record, paper_id=paper_id)
+        except (ValueError, TypeError) as exc:
+            raise ReadContractError("invalid chunk read model") from exc
+        out.append(chunk)
     return out
 
+
+def _add_verified_parent_uid(storage: StorageAdapter, paper_id: str, chunks: List[CanonicalChunk]) -> None:
+    """Supplement missing chunk UID only from the corresponding accepted paper."""
+    if not chunks or not hasattr(storage, "get_paper"):
+        return
+    parent = storage.get_paper(paper_id) or {}
+    if not isinstance(parent, dict):
+        raise ReadContractError("invalid parent paper metadata")
+    if parent.get("paper_id") not in (None, paper_id):
+        raise ReadContractError("parent paper identity mismatch")
+    uid = parent.get("paper_uid")
+    if not uid:
+        return
+    for chunk in chunks:
+        if chunk.paper_uid and chunk.paper_uid != uid:
+            raise ReadContractError("chunk and paper canonical identities conflict")
+        chunk.paper_uid = uid
 
 def _canonical_to_chunkresponse(cc: CanonicalChunk) -> ChunkResponse:
     return ChunkResponse(
         chunk_id=cc.chunk_id,
+        paper_id=cc.paper_id,
+        paper_uid=cc.paper_uid,
         text=cc.text,
         chunk_index=cc.chunk_index,
         char_len=cc.char_len,
@@ -114,89 +126,60 @@ def _canonical_to_chunkresponse(cc: CanonicalChunk) -> ChunkResponse:
 # Papers: refresh / list (adapter-first)
 # -------------------------
 def refresh_papers_cache(storage: StorageAdapter) -> List[PaperMeta]:
-    """
-    Force reload papers list from adapter (or FS fallback).
-    Returns normalized PaperMeta list and updates in-memory cache.
-    """
-    global _papers_cache, _papers_cache_loaded, _papers_cache_ts
-    try:
-        # adapter expected to return list[dict]
-        raw = []
-        if hasattr(storage, "list_papers"):
-            raw = storage.list_papers() or []
-        else:
-            raise NotImplementedError("storage.list_papers not implemented")
-    except Exception as e:
-        logger.exception("storage.list_papers failed, falling back to papers_fs: %s", e)
-        try:
-            raw = papers_fs.list_papers_from_fs() or []
-        except Exception:
-            logger.exception("papers_fs.list_papers_from_fs failed")
-            raw = []
-
-    normalized: List[PaperMeta] = []
-    seen = set()
-    for r in (raw or []):
-        pm = _normalize_paper_meta(r)
-        if pm is None:
-            continue
-        pid = (pm.paper_id or "").strip()
-        if not pid or pid in seen:
-            continue
-        seen.add(pid)
-        normalized.append(pm)
-
-    with _cache_lock:
-        _papers_cache = normalized
-        _papers_cache_loaded = True
-        _papers_cache_ts = datetime.utcnow().timestamp()
-    logger.info("refreshed papers cache (n=%d)", len(normalized))
-    return normalized
+    """Explicit refresh, without retaining stale process-global cross-corpus state."""
+    if hasattr(storage, "load_caches"):
+        storage.load_caches()
+    return list_papers(storage)
 
 
 def list_papers(storage: StorageAdapter, prefer_cache: bool = True) -> List[PaperMeta]:
+    """Read from the selected adapter; never reuse papers from another corpus.
+
+    prefer_cache is retained for callers; the adapter owns its cache lifetime.
     """
-    Return list of papers. Order of precedence:
-      1) in-memory cache (if fresh)
-      2) storage.list_papers()
-      3) FS fallback (papers_fs)
-    """
-    global _papers_cache, _papers_cache_loaded, _papers_cache_ts
+    if hasattr(storage, "list_papers"):
+        raw = storage.list_papers() or []
+    else:
+        # Legacy-only compatibility for adapters that lack a paper-list method.
+        raw = papers_fs.list_papers_from_fs() or []
+    normalized: List[PaperMeta] = []
+    seen: set[str] = set()
+    for record in raw:
+        paper = _normalize_paper_meta(record)
+        if paper is None:
+            continue
+        pid = (paper.paper_id or "").strip()
+        if pid and pid not in seen:
+            seen.add(pid)
+            normalized.append(paper)
+    return normalized
 
-    with _cache_lock:
-        if prefer_cache and _papers_cache_loaded and _papers_cache:
-            age = (datetime.utcnow().timestamp() - (_papers_cache_ts or 0)) if _papers_cache_ts else None
-            if age is not None and age < _PAPERS_CACHE_TTL:
-                logger.debug("list_papers -> returning in-memory cache (age=%s s, n=%d)", age, len(_papers_cache))
-                return list(_papers_cache)
 
-    # try adapter
-    try:
-        if hasattr(storage, "list_papers"):
-            raw = storage.list_papers() or []
-            normalized = []
-            seen = set()
-            for r in raw:
-                pm = _normalize_paper_meta(r)
-                if pm is None:
-                    continue
-                pid = (pm.paper_id or "").strip()
-                if not pid or pid in seen:
-                    continue
-                seen.add(pid)
-                normalized.append(pm)
-            if normalized:
-                with _cache_lock:
-                    _papers_cache = normalized
-                    _papers_cache_loaded = True
-                    _papers_cache_ts = datetime.utcnow().timestamp()
-                return normalized
-    except Exception:
-        logger.exception("storage.list_papers failed; will try FS fallback")
-
-    # FS fallback
-    return refresh_papers_cache(storage)
-
+def filter_papers(
+    papers: List[PaperMeta], *, q: str = "", year: Optional[int] = None,
+    venue: str = "", tag: str = "",
+) -> List[PaperMeta]:
+    """Small, deterministic, metadata-only filters; no inferred missing fields."""
+    query = q.strip().casefold()
+    venue_term = venue.strip().casefold()
+    tag_term = tag.strip().casefold()
+    result: List[PaperMeta] = []
+    for paper in papers:
+        if year is not None and paper.year != year:
+            continue
+        if venue_term and venue_term not in (paper.venue or "").casefold():
+            continue
+        if tag_term and tag_term not in {t.casefold() for t in (paper.tags or [])}:
+            continue
+        if query:
+            searchable = [
+                paper.paper_id, paper.paper_uid, paper.title, paper.abstract,
+                paper.venue, paper.doi, *(paper.authors or []),
+            ]
+            if not any(query in (value or "").casefold() for value in searchable):
+                continue
+        result.append(paper)
+    return sorted(result, key=lambda p: (p.title.casefold(), p.paper_id))
 
 # -------------------------
 # Chunk accessors
@@ -221,12 +204,18 @@ def get_paper_chunks(storage: StorageAdapter, paper_id: str, offset: int = 0, li
             total = int(res.get("n", len(raw_chunks)))
             # normalize upstream chunk dicts to canonical
             canonical = _normalize_chunks_from_upstream(raw_chunks, paper_id)
+            _add_verified_parent_uid(storage, paper_id, canonical)
             # ensure stable sort by chunk_index then return API objects
             canonical.sort(key=lambda x: int(x.chunk_index or 0))
             paged = canonical  # adapter already paginated, so trust it
             return PaperChunksResponse(paper_id=paper_id, total=total, chunks=[_canonical_to_chunkresponse(c) for c in paged])
-    except Exception as e:
-        logger.exception("storage.list_chunks failed for %s: %s", paper_id, e)
+    except ReadContractError as exc:
+        raise HTTPException(status_code=500, detail="invalid chunk read contract") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("storage.list_chunks failed for %s", paper_id)
+        raise HTTPException(status_code=503, detail="chunk storage unavailable") from exc
 
     # FS fallback: try to use an indexed reader (chunks_fs.get_chunk_by_id or read_chunks_as_models)
     try:
@@ -268,49 +257,43 @@ def get_paper_chunks(storage: StorageAdapter, paper_id: str, offset: int = 0, li
 
 
 def get_chunk(storage, paper_id: str, chunk_id: str) -> Optional[ChunkResponse]:
-    """
-    Adapter-first: call storage.get_chunk(...) or storage.get_chunk_by_id(...)
-    Fallback to chunks_fs.get_chunk_text().
-    """
-    try:
-        if hasattr(storage, "get_chunk"):
-            upstream = storage.get_chunk(paper_id=paper_id, chunk_id=chunk_id)
-            if upstream:
-                # normalize upstream to canonical
-                canonical = _normalize_chunks_from_upstream([upstream], paper_id=paper_id)
-                if canonical:
-                    return _canonical_to_chunkresponse(canonical[0])
-        elif hasattr(storage, "get_chunk_by_id"):
-            upstream = storage.get_chunk_by_id(chunk_id, paper_id=paper_id)
-            if upstream:
-                canonical = _normalize_chunks_from_upstream([upstream], paper_id=paper_id)
-                if canonical:
-                    return _canonical_to_chunkresponse(canonical[0])
-    except Exception:
-        logger.exception("storage.get_chunk failed for %s/%s", paper_id, chunk_id)
+    """Adapter-first retrieval, with no cross-source fallback on adapter failures."""
+    if hasattr(storage, "get_chunk") or hasattr(storage, "get_chunk_by_id"):
+        try:
+            if hasattr(storage, "get_chunk"):
+                record = storage.get_chunk(paper_id=paper_id, chunk_id=chunk_id)
+            else:
+                record = storage.get_chunk_by_id(chunk_id, paper_id=paper_id)
+            if not record:
+                return None
+            chunks = _normalize_chunks_from_upstream([record], paper_id)
+            _add_verified_parent_uid(storage, paper_id, chunks)
+            if len(chunks) != 1 or chunks[0].chunk_id != chunk_id:
+                raise ReadContractError("chunk identity does not match request")
+            return _canonical_to_chunkresponse(chunks[0])
+        except ReadContractError as exc:
+            raise HTTPException(status_code=500, detail="invalid chunk read contract") from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("storage.get_chunk failed for %s/%s", paper_id, chunk_id)
+            raise HTTPException(status_code=503, detail="chunk storage unavailable") from exc
 
-    # FS fallback
-    try:
-        if hasattr(chunks_fs, "get_chunk_text"):
-            txt = chunks_fs.get_chunk_text(paper_id, chunk_id)
-            if txt is not None:
-                canonical = _normalize_chunks_from_upstream([{"chunk_id": chunk_id, "text": txt}], paper_id=paper_id)
-                if canonical:
-                    return _canonical_to_chunkresponse(canonical[0])
-    except Exception:
-        logger.exception("chunks_fs.get_chunk_text fallback failed for %s/%s", paper_id, chunk_id)
-
+    # Compatibility only for storage backends without an individual-chunk API.
+    if hasattr(chunks_fs, "get_chunk_text"):
+        text = chunks_fs.get_chunk_text(paper_id, chunk_id)
+        if text is not None:
+            chunks = _normalize_chunks_from_upstream(
+                [{"chunk_id": chunk_id, "text": text}], paper_id
+            )
+            return _canonical_to_chunkresponse(chunks[0])
     return None
-
 
 # -------------------------
 # Search (semantic) - adapter-driven
 # -------------------------
 def search(storage, q: str, k: int = 6, paper_id: Optional[str] = None) -> SearchResponse:
-    """
-    Delegate to storage.semantic_search or storage.search (adapter-defined).
-    Adapter must return list of hits with at least id/text/meta/score keys.
-    """
+    """Return identifiable hits or an explicit failure, never a fake empty success."""
     if not q:
         raise HTTPException(status_code=400, detail="empty query")
 
@@ -320,30 +303,58 @@ def search(storage, q: str, k: int = 6, paper_id: Optional[str] = None) -> Searc
         elif hasattr(storage, "search"):
             hits = storage.search(q=q, k=k, paper_id=paper_id) or []
         else:
-            raise NotImplementedError("storage.semantic_search not implemented")
-    except Exception:
-        logger.exception("storage.semantic_search failed; returning empty hits")
-        hits = []
+            raise NotImplementedError("search not supported by storage")
+    except Exception as exc:
+        logger.exception("storage search failed")
+        raise HTTPException(status_code=503, detail="search storage unavailable") from exc
 
-    normalized_hits: List[SearchHit] = []
-    for h in hits:
+    normalized: List[SearchHit] = []
+    parent_uids: Dict[str, Optional[str]] = {}
+    for hit in hits:
+        if not isinstance(hit, dict):
+            raise HTTPException(status_code=500, detail="invalid search result")
+        meta = hit.get("meta") or {}
+        if not isinstance(meta, dict):
+            raise HTTPException(status_code=500, detail="invalid search result")
+        chunk_id = hit.get("chunk_id") or hit.get("id")
+        pids = [x for x in (hit.get("paper_id"), meta.get("paper_id")) if x]
+        uids = [x for x in (hit.get("paper_uid"), meta.get("paper_uid")) if x]
+        if not chunk_id or len(set(pids)) > 1 or len(set(uids)) > 1:
+            raise HTTPException(status_code=500, detail="inconsistent search hit identity")
+        if paper_id and (not pids or pids[0] != paper_id):
+            raise HTTPException(status_code=500, detail="inconsistent search hit identity")
+
+        # A paper-level canonical UID can supplement legacy hits, but only if
+        # the accepted storage record confirms the same originating paper.
+        resolved_uid = uids[0] if uids else None
+        if pids and hasattr(storage, "get_paper"):
+            pid = pids[0]
+            if pid not in parent_uids:
+                try:
+                    parent = storage.get_paper(pid) or {}
+                except Exception as exc:
+                    logger.exception("paper identity lookup failed for search hit")
+                    raise HTTPException(status_code=503, detail="search storage unavailable") from exc
+                if not isinstance(parent, dict) or parent.get("paper_id") not in (None, pid):
+                    raise HTTPException(status_code=500, detail="inconsistent search hit identity")
+                parent_uids[pid] = parent.get("paper_uid")
+            known_uid = parent_uids[pid]
+            if resolved_uid and known_uid and resolved_uid != known_uid:
+                raise HTTPException(status_code=500, detail="inconsistent search hit identity")
+            resolved_uid = resolved_uid or known_uid
         try:
-            # support both 'id' and 'chunk_id'
-            hid = h.get("id") or h.get("chunk_id") or h.get("chunk_id") or ""
-            normalized_hits.append(SearchHit(
-                id=hid,
-                text=h.get("text") or h.get("preview") or "",
-                score=float(h.get("score")) if h.get("score") is not None else None,
-                meta=h.get("meta") or {},
-                chunk_id=h.get("chunk_id") or hid,
-                paper_id=h.get("meta", {}).get("paper_id") or paper_id
+            normalized.append(SearchHit(
+                id=str(hit.get("id") or chunk_id),
+                chunk_id=str(chunk_id),
+                paper_id=pids[0] if pids else None,
+                paper_uid=resolved_uid,
+                text=hit.get("text") or hit.get("preview") or "",
+                score=float(hit["score"]) if hit.get("score") is not None else None,
+                meta=meta,
             ))
-        except Exception:
-            logger.debug("skipping malformed hit: %r", h)
-            continue
-
-    return SearchResponse(query=q, k=k, hits=normalized_hits)
-
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=500, detail="invalid search result") from exc
+    return SearchResponse(query=q, k=k, hits=normalized)
 
 # -------------------------
 # Summaries (lightweight job API)
