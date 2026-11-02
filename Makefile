@@ -12,6 +12,11 @@ FRONTEND_PORT ?= 3000
 MAX_FILES ?=
 MIN_LEN ?= 50
 CHUNK_SET_DIR ?=
+OUT ?=
+TYPE_OVERRIDES ?=
+EXPORT_FORCE ?=
+INCLUDE_ABSTRACT ?=
+ACK_TEXT_EXPORT ?=
 
 DOCTOR_CMD = python3 -m pipeline.adapter.manager doctor --corpus $(CORPUS)
 GROBID_CHECK_CMD = python3 -m pipeline.adapter.grobid_preflight
@@ -26,7 +31,7 @@ EXPORT_CATALOG_RECORDS_CMD = python3 -m pipeline.projections.catalog_records --c
 EXPORT_REVIEW_CSV_CMD = python3 -m backend.exports.export_review_csv --corpus $(CORPUS)
 API_CORPUS_CMD = PAPER_KB_CORPUS=$(CORPUS) PAPER_KB_CHUNK_SETS_DIR=corpora/$(CORPUS)/chunk_sets STORAGE_BACKEND=chunk_set uvicorn backend.app.main:app --reload --port $(PORT)
 
-.PHONY: help corpus-register corpus-register-dry-run corpus-check-input corpus-check-grobid corpus-build corpus-fixture corpus-doctor corpus-grobid corpus-parse corpus-validate corpus-parse-validate contract-review-record contract-catalog-record architecture-check read-model-identity export-review-records export-catalog-records export-review-catalog-records export-review-csv export-review api-corpus frontend-prepare frontend-dev kill-port legacy-smoke legacy-run-all legacy-run
+.PHONY: help corpus-register corpus-register-dry-run corpus-check-input corpus-check-grobid corpus-build corpus-fixture corpus-doctor corpus-grobid corpus-parse corpus-validate corpus-parse-validate contract-review-record contract-catalog-record architecture-check read-model-identity export-review-records export-catalog-records export-review-catalog-records export-csl export-retrieval export-review-csv export-review api-corpus frontend-prepare frontend-dev kill-port legacy-smoke legacy-run-all legacy-run
 
 help:
 	@echo "Operator targets (run from repo root):"
@@ -47,6 +52,8 @@ help:
 	@echo "  make read-model-identity                   # paper_uid survives chunk_set -> read/API model"
 	@echo "  make export-review-records CORPUS=tesislcd  # review-oriented paper.review-record@1 JSONL"
 	@echo "  make export-catalog-records CORPUS=tesislcd # bibliography/catalog paper.catalog-record@1 JSONL"
+	@echo "  make export-csl CORPUS=tesislcd OUT=/tmp/papers.csl.json     # Zotero import (metadata only)"
+	@echo "  make export-retrieval CORPUS=tesislcd OUT=/tmp/chunks.jsonl ACK_TEXT_EXPORT=1  # local fulltext bridge"
 	@echo "  make api-corpus CORPUS=tesislcd PORT=9000"
 	@echo "  make frontend-prepare                         # repair/refresh locked Next dependencies when needed"
 	@echo "  make frontend-dev PORT=9000 FRONTEND_PORT=3000 # API port 9000, Next workbench port 3000"
@@ -134,6 +141,15 @@ export-catalog-records:
 	$(EXPORT_CATALOG_RECORDS_CMD)
 
 export-review-catalog-records: export-review-records export-catalog-records
+
+export-csl:
+	@test -n "$(OUT)" || { echo "OUT is required, e.g. /tmp/papers.csl.json"; exit 2; }
+	python3 -m scripts.export_catalog_csl --corpus "$(CORPUS)" --out "$(OUT)" $(if $(TYPE_OVERRIDES),--type-overrides "$(TYPE_OVERRIDES)",) $(if $(INCLUDE_ABSTRACT),--include-abstract,) $(if $(EXPORT_FORCE),--force,)
+
+export-retrieval:
+	@test -n "$(OUT)" || { echo "OUT is required, e.g. /tmp/chunks.jsonl"; exit 2; }
+	@test "$(ACK_TEXT_EXPORT)" = "1" || { echo "ACK_TEXT_EXPORT=1 required to export full chunk text"; exit 2; }
+	python3 -m scripts.export_retrieval_documents --corpus "$(CORPUS)" --out "$(OUT)" --acknowledge-text-export $(if $(EXPORT_FORCE),--force,)
 
 export-review-csv:
 	@echo "[COMPATIBILITY] CSV review export; preferred machine interface for review is export-review-records."

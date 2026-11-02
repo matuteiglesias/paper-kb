@@ -6,6 +6,7 @@ Start with:
 - [`docs/architecture/paper-kb-component-boundaries.md`](docs/architecture/paper-kb-component-boundaries.md) — component authority and dependency direction;
 - [`docs/architecture/paper-kb-api-read-contract.md`](docs/architecture/paper-kb-api-read-contract.md) — truthful read/query API semantics and identity preservation;
 - [`docs/architecture/packet-b-metadata-provenance.md`](docs/architecture/packet-b-metadata-provenance.md) — OpenAlex acquisition coverage, bibliographic crosswalk, and GROBID receipts;
+- [`docs/architecture/paper-kb-consumer-interoperability.md`](docs/architecture/paper-kb-consumer-interoperability.md) — CSL JSON/Zotero and optional LlamaIndex/Haystack consumer exports;
 - [`docs/architecture/component-manifest.json`](docs/architecture/component-manifest.json) — machine-readable component map and enforced rules;
 - [`pipeline/OWNERSHIP.md`](pipeline/OWNERSHIP.md) — corpus-pipeline ownership;
 - [`docs/contracts/paper-review-record.md`](docs/contracts/paper-review-record.md) — producer-owned review contract;
