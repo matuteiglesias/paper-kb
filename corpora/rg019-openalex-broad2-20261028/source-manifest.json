@@ -1,0 +1,40 @@
+{
+  "authority_note": "This manifest governs the exact registered PDF byte set; it does not grant publication rights.",
+  "corpus_id": "rg019-openalex-broad2-20261028",
+  "files": [
+    {
+      "registered_filename": "W3174258360.pdf",
+      "sha256": "397090d942092e7f8f987ec68730fcff6c56da1ba74972fe15f076f66a71997c",
+      "size_bytes": 2672121,
+      "source_relative_path": "W3174258360.pdf"
+    },
+    {
+      "registered_filename": "W4310009876.pdf",
+      "sha256": "7697f8d32ac54e7392f6d606a363634b6f005c452eb402a286f5cf4c74efcb2a",
+      "size_bytes": 882807,
+      "source_relative_path": "W4310009876.pdf"
+    },
+    {
+      "registered_filename": "W4388144627.pdf",
+      "sha256": "8acc775acb5f507e38904d3b1c3e72eca1da7992d218d633157d392d863e5fb6",
+      "size_bytes": 4804210,
+      "source_relative_path": "W4388144627.pdf"
+    },
+    {
+      "registered_filename": "W4409164548.pdf",
+      "sha256": "a08c6877fecd82a1bfc7c6f49259de97c4275f7f1b69c8e98669a5d0c7b2a135",
+      "size_bytes": 1325703,
+      "source_relative_path": "W4409164548.pdf"
+    }
+  ],
+  "input_set_sha256": "69d7aed5e3bad54e5e8ed35537e050502e61ad7eec9937c4df0de27f7a0c9c67",
+  "materialization": "copy",
+  "pdf_count": 4,
+  "recursive_discovery": true,
+  "registered_at_utc": "2026-10-28T20:40:59.122296Z",
+  "schema_id": "paper-kb.corpus-source-manifest",
+  "schema_version": 1,
+  "source_kind": "approved-local-pdf-directory",
+  "source_path_recorded": false,
+  "total_bytes": 9684841
+}

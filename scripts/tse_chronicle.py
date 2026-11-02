@@ -9,6 +9,11 @@ can be proven.
 from __future__ import annotations
 
 import argparse
+import os
+import tempfile
+import shutil
+import urllib.error
+import email.utils
 import hashlib
 import html
 import json
@@ -50,16 +55,124 @@ def sha(obj) -> str:
     return hashlib.sha256(b).hexdigest()
 
 
-def get(url: str, cache: Path | None = None) -> bytes:
+def normalized_doi(value: str | None) -> str | None:
+    """Normalize a DOI for comparison, never replace the provider's raw value."""
+    if not value:
+        return None
+    candidate = urllib.parse.unquote(str(value).strip()).casefold()
+    candidate = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:)", "", candidate)
+    candidate = candidate.strip()
+    return candidate if re.fullmatch(r"10\.\d{4,9}/\S+", candidate) else None
+
+
+def get(url: str, cache: Path | None = None, *, headers: dict | None = None,
+        max_attempts: int = 3) -> bytes:
+    """Cache complete responses only; retry transient HTTP/network errors.
+
+    Callers must keep credential material out of the URL and cache path.
+    """
     if cache and cache.exists():
         return cache.read_bytes()
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json,text/html,application/xml"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        data = r.read()
-    if cache:
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_bytes(data)
-    return data
+    request_headers = {"User-Agent": UA, "Accept": "application/json,text/html,application/xml"}
+    request_headers.update(headers or {})
+    for attempt in range(max_attempts):
+        try:
+            req = urllib.request.Request(url, headers=request_headers)
+            with urllib.request.urlopen(req, timeout=60) as response:
+                data = response.read()
+            if cache:
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(dir=cache.parent, delete=False) as f:
+                    temp = Path(f.name)
+                    f.write(data)
+                try:
+                    os.replace(temp, cache)
+                finally:
+                    temp.unlink(missing_ok=True)
+            return data
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (429, 500, 502, 503, 504) or attempt + 1 >= max_attempts:
+                raise
+            retry_after = exc.headers.get("Retry-After") if exc.headers else None
+            delay = min(float(retry_after), 8.0) if retry_after and retry_after.isdigit() else 0.4 * 2**attempt
+        except (urllib.error.URLError, TimeoutError):
+            if attempt + 1 >= max_attempts:
+                raise
+            delay = 0.4 * 2**attempt
+        time.sleep(delay)
+    raise RuntimeError("unreachable: exhausted HTTP attempts")
+
+
+def openalex_work_pages(cache: Path, *, through_date: str = TODAY, api_key: str | None = None,
+                        max_pages: int = 500):
+    """Fetch complete institution-filtered results or raise; no partial return."""
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    cursor = "*"
+    seen_cursors: set[str] = set()
+    seen_ids: set[str] = set()
+    works: list[dict] = []
+    expected: int | None = None
+    page = 0
+    while True:
+        if page >= max_pages or cursor in seen_cursors:
+            raise RuntimeError("OpenAlex pagination exceeded page budget or repeated cursor")
+        seen_cursors.add(cursor)
+        params = urllib.parse.urlencode({
+            "filter": f"institutions.id:{OPENALEX_INST.split('/')[-1]},from_publication_date:2010-01-01,to_publication_date:{through_date}",
+            "per-page": 100,
+            "cursor": cursor,
+            "select": "id,doi,title,publication_date,publication_year,type,authorships,primary_location,locations,abstract_inverted_index,ids,open_access,concepts,keywords,related_works",
+        })
+        url = "https://api.openalex.org/works?" + params
+        payload = json.loads(get(url, cache / ("openalex-" + hashlib.sha256(url.encode()).hexdigest() + ".json"),
+                                 headers=headers))
+        if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+            raise RuntimeError("Malformed OpenAlex page")
+        meta = payload.get("meta") or {}
+        if not isinstance(meta.get("count"), int) or meta["count"] < 0:
+            raise RuntimeError("OpenAlex total count absent or invalid")
+        if expected is None:
+            expected = meta["count"]
+            if expected == 0:
+                raise RuntimeError("OpenAlex returned zero works for established institution/window")
+        elif expected != meta["count"]:
+            raise RuntimeError("OpenAlex result count changed during acquisition")
+        results = payload["results"]
+        for work in results:
+            identifier = work.get("id") if isinstance(work, dict) else None
+            if not isinstance(identifier, str) or not identifier or identifier in seen_ids:
+                raise RuntimeError("OpenAlex work ID missing or duplicated across pages")
+            seen_ids.add(identifier)
+            item = dict(work)
+            item["_chronicle_source"] = {"provider": "openalex", "institution_claim": {
+                "institution_id": "tse", "claim_kind": "provider_affiliation_metadata"}}
+            works.append(item)
+        page += 1
+        next_cursor = meta.get("next_cursor")
+        if len(works) == expected:
+            break
+        if not results or not isinstance(next_cursor, str) or not next_cursor:
+            raise RuntimeError(f"Incomplete OpenAlex acquisition: {len(works)}/{expected}")
+        if not api_key:
+            raise RuntimeError("OPENALEX_API_KEY required for cursor paging beyond the first page")
+        cursor = next_cursor
+    return works, {"expected": expected, "received": len(works), "pages": page,
+                   "status": "COMPLETE"}
+
+
+def ensure_complete_acquisition(path: Path, *, allow_legacy: bool = False) -> dict:
+    """Reject unknown/partial coverage before downstream publication."""
+    manifest_path = path / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    quality = manifest.get("quality") or {}
+    if quality.get("core") != "COMPLETE":
+        if not (allow_legacy and manifest.get("schema_version") == 1):
+            raise RuntimeError("Acquisition coverage is unverified or incomplete; rebuild refused")
+    for name, digest in (manifest.get("files") or {}).items():
+        file = path / name
+        if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest() != digest:
+            raise RuntimeError("Acquisition artifact missing or checksum mismatch: " + name)
+    return manifest
 
 
 def write_jsonl(path: Path, rows):
@@ -113,7 +226,8 @@ def parse_first_party_page(year: int, raw: bytes):
             "source_url": urllib.parse.urljoin("https://publications.ut-capitole.fr", link["href"]),
             "title": title,
             "authors": authors,
-            "published_date": f"{year}-01-01",
+            # Annual archive supplies a year, not a verified day/month.
+            "published_date": None,
             "year": year,
             "work_kind": kind,
             "working_paper_number": wp,
@@ -135,82 +249,148 @@ def reconstruct_abstract(inv):
 
 
 def acquire(args):
-    out = OUT / "acquisition"
-    cache = out / "cache"
-    out.mkdir(parents=True, exist_ok=True)
-    failures = []
-    first = []
-    for year in range(2010, 2027):
-        url = f"{FIRST_PARTY_BASE}/{year}.html"
-        try:
-            raw = get(url, cache / f"tse-{year}.html")
-            first.extend(parse_first_party_page(year, raw))
-        except Exception as exc:
-            failures.append({"provider": "tse_first_party", "url": url, "error": repr(exc)})
-    write_jsonl(out / "tse_first_party.jsonl", first)
+    """Stage a complete core acquisition before replacing the accepted snapshot.
 
-    openalex = []
-    cursor = "*"
-    while cursor:
-        params = urllib.parse.urlencode({
-            "filter": f"institutions.id:{OPENALEX_INST.split('/')[-1]},from_publication_date:2010-01-01,to_publication_date:{TODAY}",
-            "per-page": 200,
-            "cursor": cursor,
-            "select": "id,doi,title,publication_date,publication_year,type,authorships,primary_location,locations,abstract_inverted_index,ids,open_access,concepts,keywords,related_works",
-        })
-        url = "https://api.openalex.org/works?" + params
-        try:
-            data = json.loads(get(url, cache / ("openalex-" + hashlib.sha1(url.encode()).hexdigest() + ".json")))
-            for w in data.get("results", []):
-                w["_chronicle_source"] = {"provider": "openalex", "institution_claim": {"institution_id": "tse", "claim_kind": "provider_affiliation_metadata"}}
-                openalex.append(w)
-            cursor = (data.get("meta") or {}).get("next_cursor")
-            if not data.get("results"):
-                cursor = None
-        except Exception as exc:
-            failures.append({"provider": "openalex", "url": url, "error": repr(exc)})
-            break
-    write_jsonl(out / "openalex.jsonl", openalex)
+    Optional Crossref failures remain visible as PARTIAL enrichment, not core
+    failure. A failed core refresh leaves all previously accepted files intact.
+    """
+    OUT.mkdir(parents=True, exist_ok=True)
+    api_key = os.getenv("OPENALEX_API_KEY") or None
+    attempt_path = OUT / "acquisition_attempt.json"
+    with tempfile.TemporaryDirectory(prefix=".tse-acquisition-", dir=OUT) as tmp:
+        stage = Path(tmp) / "acquisition"
+        stage.mkdir()
+        cache = stage / "cache"
+        failures: list[dict] = []
+        first: list[dict] = []
+        years_completed = []
+        for year in range(2010, 2027):
+            url = f"{FIRST_PARTY_BASE}/{year}.html"
+            try:
+                raw = get(url, cache / f"tse-{year}.html")
+                year_rows = parse_first_party_page(year, raw)
+                if not year_rows:
+                    raise RuntimeError("No first-party publications parsed for year")
+                first.extend(year_rows)
+                years_completed.append(year)
+            except Exception as exc:
+                failures.append({"provider": "tse_first_party", "url": url,
+                                 "error_type": type(exc).__name__})
+        oa_status = None
+        openalex = []
+        if len(years_completed) == 17:
+            try:
+                openalex, oa_status = openalex_work_pages(
+                    cache, api_key=api_key, max_pages=getattr(args, "max_openalex_pages", 500))
+            except Exception as exc:
+                failures.append({"provider": "openalex", "error_type": type(exc).__name__,
+                                 "reason": str(exc) if not api_key else type(exc).__name__})
+        core_ok = (
+            len(years_completed) == 17
+            and isinstance(oa_status, dict)
+            and oa_status.get("status") == "COMPLETE"
+            and oa_status.get("expected") == oa_status.get("received") == len(openalex)
+        )
+        if not core_ok:
+            attempt = {
+                "schema_version": 1, "core": "FAILED",
+                "first_party_years_completed": years_completed,
+                "openalex": oa_status, "failures": failures,
+                "previous_accepted_snapshot_preserved": True,
+            }
+            attempt_path.write_text(json.dumps(attempt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            raise RuntimeError("Incomplete TSE acquisition; previous accepted snapshot preserved; see acquisition_attempt.json")
 
-    # Crossref is deliberately bounded to DOI-bearing OpenAlex works where no
-    # abstract was available. It is enrichment, never membership evidence.
-    cross = read_jsonl(out / "crossref.jsonl") if args.max_crossref == 0 else []
-    seen_doi = set()
-    for w in openalex:
-        if args.max_crossref == 0:
-            break
-        if len(seen_doi) >= args.max_crossref:
-            break
-        doi = (w.get("doi") or "").lower().strip()
-        if not doi or doi in seen_doi or reconstruct_abstract(w.get("abstract_inverted_index")):
-            continue
-        seen_doi.add(doi)
-        doi_path = re.sub(r"^https?://doi\.org/", "", doi, flags=re.I).strip()
-        url = "https://api.crossref.org/works/" + urllib.parse.quote(doi_path, safe="")
+        cross = []
+        seen_doi = set()
+        max_crossref = max(0, args.max_crossref)
+        eligible_dois = {
+            doi for work in openalex
+            if (doi := normalized_doi(work.get("doi")))
+            and not reconstruct_abstract(work.get("abstract_inverted_index"))
+        }
+        for work in openalex:
+            if len(seen_doi) >= max_crossref:
+                break
+            doi = normalized_doi(work.get("doi"))
+            if not doi or doi in seen_doi or reconstruct_abstract(work.get("abstract_inverted_index")):
+                continue
+            seen_doi.add(doi)
+            url = "https://api.crossref.org/works/" + urllib.parse.quote(doi, safe="")
+            mailto = os.getenv("CROSSREF_MAILTO")
+            if mailto:
+                url += "?" + urllib.parse.urlencode({"mailto": mailto})
+            try:
+                payload = json.loads(get(
+                    url, cache / ("crossref-" + hashlib.sha256(doi.encode()).hexdigest() + ".json")
+                ))
+                message = payload.get("message") if isinstance(payload, dict) else None
+                if not isinstance(message, dict) or normalized_doi(message.get("DOI") or message.get("doi")) != doi:
+                    raise ValueError("Crossref response missing or mismatching DOI")
+                cross.append(message)
+            except Exception as exc:
+                failures.append({"provider": "crossref", "doi": doi,
+                                 "error_type": type(exc).__name__})
+            if args.sleep:
+                time.sleep(args.sleep)
+
+        write_jsonl(stage / "tse_first_party.jsonl", first)
+        write_jsonl(stage / "openalex.jsonl", openalex)
+        write_jsonl(stage / "crossref.jsonl", cross)
+        write_jsonl(stage / "failures.jsonl", failures)
+        optional_failures = sum(x["provider"] == "crossref" for x in failures)
+        if max_crossref == 0:
+            enrichment_status = "NOT_REQUESTED"
+        elif optional_failures:
+            enrichment_status = "PARTIAL_FAILURE"
+        elif len(seen_doi) < len(eligible_dois):
+            enrichment_status = "BOUNDED_COMPLETE"
+        else:
+            enrichment_status = "COMPLETE"
+        manifest = {
+            "schema_version": 2, "institution": "tse",
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
+            "through_date": TODAY,
+            "sources": {"tse_first_party": FIRST_PARTY_BASE + "/<year>.html",
+                        "openalex": "https://api.openalex.org/works",
+                        "crossref": "https://api.crossref.org/works/<doi>"},
+            "identifiers": {"openalex_institution": OPENALEX_INST, "ror": ROR},
+            "counts": {"tse_first_party": len(first), "openalex": len(openalex),
+                       "crossref": len(cross), "failures": len(failures)},
+            "quality": {"core": "COMPLETE",
+                        "crossref_enrichment": enrichment_status,
+                        "openalex": oa_status, "first_party_years": years_completed,
+                        "first_party_as_of": datetime.now(timezone.utc).isoformat(),
+                        "first_party_date_resolution": "ANNUAL_ARCHIVE_YEAR_ONLY",
+                        "first_party_cutoff_verified": False,
+                        "crossref_requested": len(seen_doi),
+                        "crossref_eligible": len(eligible_dois),
+                        "crossref_failed": optional_failures,
+                        "crossref_bounded": max_crossref},
+            "files": {f.name: hashlib.sha256(f.read_bytes()).hexdigest()
+                      for f in (stage / "tse_first_party.jsonl", stage / "openalex.jsonl",
+                                stage / "crossref.jsonl", stage / "failures.jsonl")},
+        }
+        (stage / "run_manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        ensure_complete_acquisition(stage)
+        # Accept only after all files and quality checks are available.
+        accepted = OUT / "acquisition"
+        backup = OUT / ".acquisition-previous"
+        if backup.exists():
+            raise RuntimeError("Old acquisition backup exists; refusing to overwrite")
+        if accepted.exists():
+            accepted.rename(backup)
         try:
-            cross.append(json.loads(get(url, cache / ("crossref-" + hashlib.sha1(doi.encode()).hexdigest() + ".json"))).get("message", {}))
-        except Exception as exc:
-            failures.append({"provider": "crossref", "url": url, "doi": doi, "error": repr(exc)})
-        if args.sleep:
-            time.sleep(args.sleep)
-    write_jsonl(out / "crossref.jsonl", cross)
-    write_jsonl(out / "failures.jsonl", failures)
-    manifest = {
-        "schema_version": 1,
-        "institution": "tse",
-        "retrieved_at": datetime.now(timezone.utc).isoformat(),
-        "through_date": TODAY,
-        "sources": {
-            "tse_first_party": "https://publications.ut-capitole.fr/view/divisions/tse/<year>.html",
-            "openalex": "https://api.openalex.org/works",
-            "crossref": "https://api.crossref.org/works/<doi>",
-        },
-        "identifiers": {"openalex_institution": OPENALEX_INST, "ror": ROR},
-        "counts": {"tse_first_party": len(first), "openalex": len(openalex), "crossref": len(cross), "failures": len(failures)},
-        "files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in [out/"tse_first_party.jsonl", out/"openalex.jsonl", out/"crossref.jsonl", out/"failures.jsonl"]},
-    }
-    (out / "run_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return manifest
+            stage.rename(accepted)
+        except Exception:
+            if backup.exists():
+                backup.rename(accepted)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
+        attempt_path.unlink(missing_ok=True)
+        return manifest
 
 
 def crossref_abstract(row):
@@ -276,19 +456,18 @@ def reconcile():
         names = [a.get("name") for a in candidate.get("authors") or []]
         if any(author_overlap_key(n) in first_party_author_roster for n in names if n):
             oa.append(candidate)
-    cross_by_doi = {norm(r.get("DOI") or r.get("doi")): r for r in cross if r.get("DOI") or r.get("doi")}
+    cross_by_doi = {normalized_doi(r.get("DOI") or r.get("doi")): r for r in cross if normalized_doi(r.get("DOI") or r.get("doi"))}
     for r in oa:
         if not r.get("abstract"):
-            cr = cross_by_doi.get(norm(r.get("doi")))
+            cr = cross_by_doi.get(normalized_doi(r.get("doi")))
             if cr and crossref_abstract(cr):
                 r["abstract"] = crossref_abstract(cr)
                 r["abstract_source"] = "crossref"
                 r["abstract_source_ref"] = cr.get("URL") or r.get("doi")
 
     buckets = {}
-    aliases = defaultdict(list)
     def key_for(r, prefix):
-        doi = norm(r.get("doi"))
+        doi = normalized_doi(r.get("doi"))
         if doi:
             return "doi:" + doi
         wp = norm(r.get("working_paper_number"))
@@ -298,25 +477,37 @@ def reconcile():
     for r in first:
         k = key_for(r, "tse")
         buckets.setdefault(k, {"claims": []})["claims"].append(r)
-        aliases["title:" + norm(r.get("title")) + ":" + str(r.get("year"))].append(k)
     for r in oa:
+        # Exact title/year is candidate evidence only. It is not sufficient
+        # to silently merge two provider bibliographic records.
         k = key_for(r, "oa")
-        title_key = "title:" + norm(r.get("title")) + ":" + str(r.get("year"))
-        candidates = aliases.get(title_key, [])
-        if not norm(r.get("doi")) and len(candidates) == 1:
-            # Exact title/year match is recorded as reconciliation evidence,
-            # not fuzzy identity inference.
-            k = candidates[0]
         buckets.setdefault(k, {"claims": []})["claims"].append(r)
     records = []
     for k in sorted(buckets):
         claims = buckets[k]["claims"]
         ordered = sorted(claims, key=lambda r: (0 if r.get("provider") == "tse_first_party" else 1, r.get("provider", "")))
         base = dict(ordered[0])
+        field_sources = {}
+        for field in ("title", "authors", "year", "published_date", "doi",
+                      "abstract", "venue_or_display", "source_url"):
+            if base.get(field):
+                field_sources[field] = {
+                    "provider": base.get("provider"),
+                    "provider_record_id": base.get("provider_record_id"),
+                }
         for r in ordered[1:]:
             for field in ("doi", "abstract", "abstract_source", "venue_or_display", "source_url"):
                 if not base.get(field) and r.get(field):
                     base[field] = r[field]
+                    field_sources[field] = {
+                        "provider": r.get("provider"),
+                        "provider_record_id": r.get("provider_record_id"),
+                    }
+        if base.get("abstract") and base.get("abstract_source") == "crossref":
+            field_sources["abstract"] = {
+                "provider": "crossref",
+                "provider_record_id": normalized_doi(base.get("doi")),
+            }
         title = base.get("title") or "Untitled work"
         cid = "chronicle:tse:" + hashlib.sha256(k.encode()).hexdigest()[:20]
         first_claim = next((r for r in claims if r.get("provider") == "tse_first_party"), None)
@@ -332,6 +523,8 @@ def reconcile():
             "published_date": base.get("published_date"),
             "work_kind": "working-paper" if any("working paper" in norm(r.get("raw_display")) or "document de travail" in norm(r.get("raw_display")) for r in claims) else base.get("work_kind"),
             "doi": base.get("doi"),
+            "normalized_doi": normalized_doi(base.get("doi")),
+            "field_sources": field_sources,
             "working_paper_number": next((r.get("working_paper_number") for r in claims if r.get("working_paper_number")), None),
             "venue": base.get("venue_or_display"),
             "abstract": base.get("abstract"),
@@ -342,33 +535,83 @@ def reconcile():
             "paper_uid": None,
             "paper_kb_state": "CHRONICLE_METADATA_ONLY",
             "reconciliation_key": k,
-            "reconciliation_method": "doi" if k.startswith("doi:") else ("tse_working_paper_number" if k.startswith("wp:") else "provider_identity"),
+            "reconciliation_method": "bibliographic_doi" if k.startswith("doi:") else ("tse_working_paper_number" if k.startswith("wp:") else "provider_identity"),
         }
         records.append(rec)
     records.sort(key=lambda r: (r.get("year") or 9999, norm(r["title"]), r["chronicle_id"]))
     return records
 
 
-def link_paper_kb(records):
-    by_doi, by_title = {}, defaultdict(list)
-    for p in ROOT.glob("corpora/*/chunk_sets/*.json"):
+def link_paper_kb(records, *, chunk_set_paths=None):
+    """Produce non-authoritative candidate associations; never reassign UIDs.
+
+    DOI links refer to intellectual/bibliographic works. Even exact title matches
+    do not assert byte-identical PDF/TEI lineage, nor unique source identity.
+    """
+    paths = (ROOT.glob("corpora/*/chunk_sets/*.chunk_set.json") if chunk_set_paths is None else chunk_set_paths)
+    by_doi, by_title_year = defaultdict(list), defaultdict(list)
+    for path in sorted((Path(p) for p in paths), key=str):
         try:
-            x = json.loads(p.read_text(encoding="utf-8")); m = x.get("paper_meta") or {}
-        except Exception:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            meta = payload.get("paper_meta") or {}
+        except (OSError, ValueError, AttributeError):
             continue
-        uid = m.get("paper_uid") or m.get("paper_id")
-        if not uid: continue
-        if norm(m.get("doi")): by_doi[norm(m["doi"])] = (uid, str(p))
-        by_title[norm(m.get("title"))].append((uid, str(p)))
+        uid = meta.get("paper_uid")
+        if not uid:
+            continue  # A legacy ID is not a canonical manifestation UID.
+        corpus = path.parent.parent.name
+        candidate = {
+            "paper_uid": uid,
+            "paper_id": meta.get("paper_id"),
+            "corpus": corpus, "chunk_set": str(path),
+            "source_sha256": meta.get("source_sha256"),
+            "openalex_work_id": meta.get("openalex_work_id"),
+            "local_normalized_doi": normalized_doi(meta.get("doi")),
+        }
+        doi = normalized_doi(meta.get("doi"))
+        if doi:
+            by_doi[doi].append(candidate)
+        title = norm(meta.get("title"))
+        year = meta.get("year")
+        if title and year:
+            by_title_year[(title, str(year))].append(candidate)
+
     links = []
-    for r in records:
-        hit = by_doi.get(norm(r.get("doi"))) if r.get("doi") else None
-        if not hit and len(by_title.get(norm(r.get("title")), [])) == 1:
-            hit = by_title[norm(r.get("title"))][0]
-        if hit:
-            r["paper_uid"], r["paper_kb_source"] = hit
-            r["paper_kb_state"] = "GOVERNED_FULLTEXT"
-            links.append({"chronicle_id": r["chronicle_id"], "paper_uid": hit[0], "chunk_set": hit[1], "match": "doi" if r.get("doi") and norm(r.get("doi")) in by_doi else "exact_title"})
+    for record in records:
+        doi = normalized_doi(record.get("doi"))
+        matches = by_doi.get(doi, []) if doi else []
+        method = "normalized_doi"
+        if not matches and record.get("title") and record.get("year"):
+            matches = [
+                candidate
+                for candidate in by_title_year.get((norm(record["title"]), str(record["year"])), [])
+                if not doi or not candidate["local_normalized_doi"]
+                or candidate["local_normalized_doi"] == doi
+            ]
+            method = "title_year_candidate"
+        matches = sorted(matches, key=lambda x: (x["corpus"], x["paper_uid"], x["chunk_set"]))
+        if not matches:
+            continue
+        # Do not silently promote external work identity to a Paper KB source.
+        record["paper_kb_state"] = "BIBLIOGRAPHIC_ASSOCIATION_AMBIGUOUS" if len(matches) > 1 else "BIBLIOGRAPHIC_ASSOCIATION"
+        record["paper_uid"] = None
+        record["paper_kb_candidates"] = len(matches)
+        for candidate in matches:
+            links.append({
+                "chronicle_id": record["chronicle_id"],
+                **candidate,
+                "relationship": "bibliographic_association",
+                "match_basis": method,
+                "match_status": "AMBIGUOUS" if len(matches) > 1 else "CANDIDATE",
+                "candidate_count": len(matches),
+                "verified_manifestation": False,
+                "normalized_doi": doi if method == "normalized_doi" else None,
+                "external_records": [
+                    {"provider": source.get("provider"),
+                     "provider_record_id": source.get("provider_record_id")}
+                    for source in record.get("sources", [])
+                ],
+            })
     return links
 
 
@@ -440,13 +683,15 @@ def render(records, assigns, links, manifest):
     write_jsonl(OUT / "paper_kb_links.jsonl", links)
     topics_count = Counter(t for a in assigns for t in [a["topic"]])
     years = Counter(r.get("year") for r in records if r.get("year"))
-    counts = {"chronicle_records": len(records), "authors": len(author_rows), "abstracts": abstract_count, "years": dict(sorted((str(k), v) for k, v in years.items())), "work_kinds": dict(kinds), "topics": dict(topics_count), "paper_kb_links": len(links), "first_party_records": sum(r["membership_evidence"] == "first_party_listing" for r in records), "external_only_records": sum(r["membership_evidence"] != "first_party_listing" for r in records)}
+    counts = {"chronicle_records": len(records), "authors": len(author_rows), "abstracts": abstract_count, "years": dict(sorted((str(k), v) for k, v in years.items())), "work_kinds": dict(kinds), "topics": dict(topics_count), "paper_kb_links": len(links), "paper_kb_verified_manifestation_links": 0, "first_party_records": sum(r["membership_evidence"] == "first_party_listing" for r in records), "external_only_records": sum(r["membership_evidence"] != "first_party_listing" for r in records)}
     (OUT / "acquisition_counts.json").write_text(json.dumps(counts, ensure_ascii=False, indent=2, sort_keys=True)+"\n", encoding="utf-8")
     report = ["# ACQUISITION_REPORT", "", f"- TSE first-party rows: {manifest['counts']['tse_first_party']}", f"- OpenAlex rows: {manifest['counts']['openalex']}", f"- Crossref enrichment rows: {manifest['counts']['crossref']}", f"- provider failures: {manifest['counts']['failures']}", f"- reconciled Chronicle records: {len(records)}", f"- first-party membership records: {counts['first_party_records']}", f"- external-affiliation-only records: {counts['external_only_records']}", f"- DOI-bearing records: {sum(bool(r.get('doi')) for r in records)}", f"- abstract-bearing records: {abstract_count}", "", "External provider affiliation is enrichment/discovery evidence, not first-party TSE membership. The first-party archive is the strongest membership claim in this run."]
     report.append(f"- OpenAlex candidates retained after first-party author-roster overlap: {sum(1 for r in records if any(s.get('provider') == 'openalex' for s in r.get('sources', [])))}")
     report.append("- OpenAlex rows without first-party author-roster overlap remain in the raw snapshot but are excluded from the Chronicle projection to reduce affiliation noise.")
+    report.append(f"- Core acquisition status: {(manifest.get('quality') or {}).get('core', 'UNKNOWN')}")
+    report.append(f"- Crossref enrichment status: {(manifest.get('quality') or {}).get('crossref_enrichment', 'UNKNOWN')}")
     (OUT / "ACQUISITION_REPORT.md").write_text("\n".join(report)+"\n", encoding="utf-8")
-    (OUT / "PAPER_KB_PROMOTION.md").write_text("# PAPER_KB_PROMOTION\n\n- Total Chronicle records: %d\n- Existing governed Paper KB matches: %d\n- Chronicle metadata-only records: %d\n\nExternal metadata was not emitted as `paper.catalog-record@1` or `paper.review-record@1`. Records are promoted only when an existing governed chunk-set match is proven.\n" % (len(records), len(links), len(records)-len(links)), encoding="utf-8")
+    (OUT / "PAPER_KB_PROMOTION.md").write_text("# PAPER_KB_PROMOTION\n\n- Total Chronicle records: %d\n- Bibliographic candidate associations to governed sources (not verified manifestations): %d\n- Chronicle records without candidates: %d\n\nExternal metadata was not emitted as `paper.catalog-record@1` or `paper.review-record@1`. Bibliographic associations are candidates only and do not promote metadata-only records or establish source byte identity.\n" % (len(records), len(links), sum(not r.get("paper_kb_candidates") for r in records)), encoding="utf-8")
     # Markdown products.
     def item_md(r):
         abstract = r.get("abstract") or "Abstract unavailable in the acquired providers."
@@ -469,8 +714,8 @@ def render(records, assigns, links, manifest):
     (OUT / "TOPIC_CHRONOLOGY.md").write_text("\n".join(topic_md)+"\n", encoding="utf-8")
     latest = sorted([r for r in records if r.get("published_date")], key=lambda r: (r.get("published_date"), r["chronicle_id"]), reverse=True)[:50]
     (OUT / "LATEST.md").write_text("# Latest TSE work\n\nRecent records in the acquired source window, ordered by publication date.\n\n"+"\n".join(item_md(r) for r in latest)+"\n", encoding="utf-8")
-    (OUT / "COVERAGE.md").write_text("# Coverage and provenance\n\nThe Chronicle covers the requested 2010-01-01 through 2026-09-12 window using the Toulouse Capitole TSE division archive as first-party listing evidence, OpenAlex as external affiliation discovery/enrichment, and Crossref as DOI metadata enrichment. It is not a claim of exhaustive historical institutional membership: provider coverage and archive completeness remain explicit gaps.\n\nEvery record retains source URLs and a membership evidence label. Metadata-only records do not masquerade as governed Paper KB papers.\n", encoding="utf-8")
-    (OUT / "RECONCILIATION_REVIEW.md").write_text("# Reconciliation review\n\nStrong DOI keys merge provider claims. TSE working-paper numbers are preserved as a distinct key when present. OpenAlex records without DOI are matched to a first-party row only on exact normalized title and year; otherwise they retain provider identity. Title similarity alone is never used for silent merging.\n", encoding="utf-8")
+    (OUT / "COVERAGE.md").write_text("# Coverage and provenance\n\nThe Chronicle covers the requested 2010-01-01 through 2026-09-13 window using the Toulouse Capitole TSE division archive as first-party listing evidence, OpenAlex as external affiliation discovery/enrichment, and Crossref as DOI metadata enrichment. It is not a claim of exhaustive historical institutional membership: provider coverage and archive completeness remain explicit gaps.\n\nEvery record retains source URLs and a membership evidence label. Metadata-only records do not masquerade as governed Paper KB papers.\n", encoding="utf-8")
+    (OUT / "RECONCILIATION_REVIEW.md").write_text("# Reconciliation review\n\nNormalized DOI keys group provider bibliographic claims, not PDF manifestations. TSE working-paper numbers are preserved as a distinct key when present. OpenAlex records without DOI are matched to a first-party row only on exact normalized title and year; otherwise they retain provider identity. Bibliographic candidate links to governed sources do not establish PDF identity. Ambiguous matches retain all source manifestations; no canonical paper UID is assigned by reconciliation.\n", encoding="utf-8")
     # Static browseable HTML.
     rendered = OUT / "rendered"; rendered.mkdir(exist_ok=True)
     def esc(x): return html.escape(str(x or ""))
@@ -497,6 +742,7 @@ def render(records, assigns, links, manifest):
 
 
 def build():
+    ensure_complete_acquisition(OUT / "acquisition")
     records = reconcile()
     links = link_paper_kb(records)
     assigns = topics(records)
@@ -505,15 +751,19 @@ def build():
 
 
 def qa():
+    ensure_complete_acquisition(OUT / "acquisition")
     records = read_jsonl(OUT / "papers.jsonl")
     assigns = read_jsonl(OUT / "topic_assignments.jsonl")
     ids = [r.get("chronicle_id") for r in records]
-    dois = [norm(r.get("doi")) for r in records if r.get("doi")]
+    dois = [normalized_doi(r.get("doi")) for r in records if normalized_doi(r.get("doi"))]
     wps = [norm(r.get("working_paper_number")) for r in records if r.get("working_paper_number")]
     record_ids = set(ids)
     assignment_ids = {a.get("chronicle_id") for a in assigns}
     link_rows = read_jsonl(OUT / "paper_kb_links.jsonl")
+    acquisition_quality = ensure_complete_acquisition(OUT / "acquisition").get("quality") or {}
     result = {
+        "acquisition_quality": acquisition_quality,
+        "optional_enrichment_warning": acquisition_quality.get("crossref_enrichment") != "COMPLETE",
         "record_count": len(records),
         "duplicate_chronicle_ids": len(ids) - len(record_ids),
         "duplicate_normalized_dois": len(dois) - len(set(dois)),
@@ -535,7 +785,7 @@ def qa():
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    a = sub.add_parser("acquire"); a.add_argument("--sleep", type=float, default=0.1); a.add_argument("--max-crossref", type=int, default=300)
+    a = sub.add_parser("acquire"); a.add_argument("--sleep", type=float, default=0.1); a.add_argument("--max-crossref", type=int, default=300); a.add_argument("--max-openalex-pages", type=int, default=500)
     sub.add_parser("build")
     sub.add_parser("qa")
     sub.add_parser("all")

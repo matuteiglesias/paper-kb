@@ -1,10 +1,16 @@
-import type { components } from "@/api/generated";
+import type {
+  PaperMeta as ApiPaperMeta,
+  PapersList as ApiPapersList,
+  ChunkResponse as ApiChunkResponse,
+  PaperChunksResponse as ApiPaperChunksResponse,
+  SearchResponse as ApiSearchResponse,
+} from "@/api/types";
 
-export type RawPaperMeta = components["schemas"]["PaperMeta"];
-export type RawPapersList = components["schemas"]["PapersList"];
-export type RawChunkResponse = components["schemas"]["ChunkResponse"];
-export type RawPaperChunksResponse = components["schemas"]["PaperChunksResponse"];
-export type RawSearchHit = components["schemas"]["SearchHit"];
+export type RawPaperMeta = ApiPaperMeta;
+export type RawPapersList = ApiPapersList;
+export type RawChunkResponse = ApiChunkResponse;
+export type RawPaperChunksResponse = ApiPaperChunksResponse;
+export type RawSearchHit = ApiSearchResponse["hits"][number];
 
 type ExtendedRawPaperMeta = RawPaperMeta & {
   paper_uid?: string | null;
@@ -49,6 +55,7 @@ export type PaperMeta = {
 export type Chunk = {
   id: string;
   paperId?: string;
+  paperUid?: string | null;
   pos: number;
   text: string;
   charLen: number;
@@ -93,6 +100,7 @@ export function normalizeChunkResponse(raw: RawChunkResponse, parentPaperId?: st
   return {
     id: r.chunk_id,
     paperId: parentPaperId ?? r.paper_id ?? undefined,
+    paperUid: r.paper_uid ?? null,
     pos: typeof r.chunk_index === "number" ? r.chunk_index : 0,
     text: r.text ?? "",
     charLen: typeof r.char_len === "number" ? r.char_len : (r.text ? r.text.length : 0),

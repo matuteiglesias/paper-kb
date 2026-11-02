@@ -43,6 +43,7 @@ class PaperMeta(BaseModel):
 class CanonicalChunk(BaseModel):
     chunk_id: str
     paper_id: str
+    paper_uid: Optional[str] = None
     text: str
     chunk_index: int = Field(..., ge=0)
     char_len: int
@@ -75,7 +76,7 @@ class EmbeddingRecord(BaseModel):
 # ------------------------------
 class SearchRequest(BaseModel):
     q: str
-    k: Optional[int] = 6
+    k: Optional[int] = Field(6, ge=1, le=200)
     paper_id: Optional[str] = None
 
 
@@ -93,6 +94,7 @@ class SearchHit(BaseModel):
     # optionally canonical snippet fields:
     chunk_id: Optional[str] = None
     paper_id: Optional[str] = None
+    paper_uid: Optional[str] = None
 
 
 class SearchResponse(BaseModel):
@@ -166,6 +168,8 @@ class SummaryTask(BaseModel):
 # ------------------------------
 class ChunkResponse(BaseModel):
     chunk_id: str
+    paper_id: Optional[str] = None
+    paper_uid: Optional[str] = None
     text: str
     chunk_index: int
     char_len: int
@@ -176,6 +180,7 @@ class ChunkResponse(BaseModel):
 
 class PapersList(BaseModel):
     papers: List[PaperMeta]
+    total: Optional[int] = None
 
 
 class PaperChunksResponse(BaseModel):
@@ -194,6 +199,7 @@ def canonical_to_api_chunk(c: CanonicalChunk, include_id_alias: bool = True) -> 
     """
     out = {
         "chunk_id": c.chunk_id,
+        "paper_uid": c.paper_uid,
         "text": c.text,
         "chunk_index": c.chunk_index,
         "char_len": c.char_len,

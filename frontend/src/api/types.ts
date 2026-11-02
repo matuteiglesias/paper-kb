@@ -1,12 +1,24 @@
 import type { components } from '../../src/api/generated';
 
-export type PaperMeta = components['schemas']['PaperMeta'];
-export type PapersList = components['schemas']['PapersList'];
-export type ChunkResponse = components['schemas']['ChunkResponse'];
-export type CanonicalChunk = components['schemas']['CanonicalChunk'];
-export type PaperChunksResponse = components['schemas']['PaperChunksResponse'];
+// Additive contract surface until the legacy generated.ts OpenAPI client is regenerated.
+// Keep this mapping aligned with backend/app/schemas.py and API contract tests.
+export type PaperMeta = components['schemas']['PaperMeta'] & { paper_uid?: string | null };
+export type PapersList = Omit<components['schemas']['PapersList'], 'papers'> & {
+  papers: PaperMeta[];
+  total?: number | null;
+};
+export type ChunkResponse = components['schemas']['ChunkResponse'] & {
+  paper_id?: string | null;
+  paper_uid?: string | null;
+};
+export type CanonicalChunk = components['schemas']['CanonicalChunk'] & { paper_uid?: string | null };
+export type PaperChunksResponse = Omit<components['schemas']['PaperChunksResponse'], 'chunks'> & {
+  chunks: ChunkResponse[];
+};
 export type SearchRequest = components['schemas']['SearchRequest'];
-export type SearchResponse = components['schemas']['SearchResponse'];
+export type SearchResponse = Omit<components['schemas']['SearchResponse'], 'hits'> & {
+  hits: (components['schemas']['SearchHit'] & { paper_uid?: string | null })[];
+};
 export type HTTPValidationError = components['schemas']['HTTPValidationError'];
 
 export type CorpusInfoResponse = {

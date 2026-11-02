@@ -18,6 +18,8 @@ import hashlib
 import re, json
 import requests
 import time
+from datetime import datetime, timezone
+from urllib.parse import urlsplit, urlunsplit
 from pathlib import Path
 from typing import Optional
 
@@ -107,6 +109,44 @@ from typing import Optional, List, Dict, Any
 import glob
 import traceback
 
+def grobid_version() -> str | None:
+    """Best-effort running service revision; absence is explicitly unknown."""
+    parsed = urlsplit(GROBID_URL)
+    endpoint = urlunsplit((parsed.scheme, parsed.netloc, "/api/version", "", ""))
+    try:
+        response = requests.get(endpoint, timeout=3)
+        response.raise_for_status()
+        value = response.text.strip()
+        return value[:160] or None
+    except requests.RequestException:
+        return None
+
+
+def processing_receipt(pdf_path: Path, tei_path: Path, tei_text: str, *,
+                       consolidate_header: bool, version: str | None,
+                       extracted_doi: str | None = None) -> dict:
+    """Evidence of processing settings, *not* proof of provider field origins."""
+    h = hashlib.sha256()
+    with Path(pdf_path).open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            h.update(block)
+    return {
+        "schema_version": 1, "producer": "paper-kb",
+        "input_pdf_basename": pdf_path.name,
+        "input_pdf_sha256": h.hexdigest(),
+        "tei_basename": tei_path.name,
+        "tei_sha256": hashlib.sha256(tei_text.encode("utf-8")).hexdigest(),
+        "grobid_version": version,
+        "grobid_version_status": "OBSERVED" if version else "UNKNOWN",
+        "consolidate_header": "1" if consolidate_header else "0",
+        "external_enrichment": "POSSIBLE_NOT_VERIFIED" if consolidate_header else "DISABLED",
+        "field_level_metadata_origin": "NOT_OBSERVABLE",
+        "observed_tei_doi": extracted_doi,
+        "parser": "grobid_processFulltextDocument",
+        "processed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def _collect_pdf_paths(input_path: str, recursive: bool = False) -> List[Path]:
     p = Path(input_path).expanduser().resolve()
     if p.exists() and p.is_file():
@@ -153,12 +193,14 @@ def generate_teis_from_pdfs(pdf_dir: Path,
     out_tei_dir.mkdir(parents=True, exist_ok=True)
     failures_dir = out_tei_dir / "failures"
     failures_dir.mkdir(exist_ok=True)
+    receipts_dir = out_tei_dir / "receipts"
 
     files = _collect_pdf_paths(str(pdf_dir), recursive=recursive)
     if max_files:
         files = files[:max_files]
 
     summary = {"n_input": len(files), "n_success": 0, "n_failures": 0, "successes": [], "failures": []}
+    version = grobid_version() if files else None
 
     for pdf_path in files:
         try:
@@ -181,18 +223,49 @@ def generate_teis_from_pdfs(pdf_dir: Path,
 
             # disambiguate collisions (only if file exists or provided pid doesn't match)
             if candidate.exists():
-                # use stable short suffix from pid if available, else hash of pdf filename
-                if pid and pid != preferred_base:
-                    suffix = "-" + _sanitize_filename(str(pid))[:12]
+                # Repeated processing of the same input is not a new document.
+                # Different PDFs with equal extracted titles may coexist.
+                existing_receipt = receipts_dir / (candidate.name + ".provenance.json")
+                if existing_receipt.exists():
+                    old_receipt = json.loads(existing_receipt.read_text(encoding="utf-8"))
+                    digest = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+                    if (old_receipt.get("input_pdf_sha256") == digest
+                            and old_receipt.get("consolidate_header") ==
+                            ("1" if consolidate_header else "0")):
+                        if not force:
+                            raise FileExistsError(
+                                f"Source/configuration already processed: {candidate}; use --force to replace")
+                    else:
+                        suffix = _short_hash(pdf_path.name + digest, 12)
+                        candidate = out_tei_dir / f"{preferred_base}-{suffix}.tei.xml"
                 else:
-                    suffix = "-" + _short_hash(pdf_path.name, 8)
-                candidate = out_tei_dir / f"{preferred_base}{suffix}.tei.xml"
+                    suffix = _short_hash(pdf_path.name, 8)
+                    candidate = out_tei_dir / f"{preferred_base}-{suffix}.tei.xml"
+            if candidate.exists() and not force:
+                raise FileExistsError(f"TEI already exists: {candidate}; use --force to replace")
 
-            # atomic write
+            receipt = processing_receipt(
+                pdf_path, candidate, tei_text,
+                consolidate_header=consolidate_header,
+                version=version, extracted_doi=parsed.get("doi"),
+            )
+            receipts_dir.mkdir(parents=True, exist_ok=True)
+            receipt_file = receipts_dir / (candidate.name + ".provenance.json")
+            # The new TEI is not considered successful without its receipt.
             _atomic_write_text(candidate, tei_text)
-            logger.info("grobid: wrote TEI %s", candidate)
+            try:
+                _atomic_write_text(receipt_file, json.dumps(receipt, sort_keys=True, indent=2) + "\n")
+            except Exception:
+                if not force:
+                    candidate.unlink(missing_ok=True)
+                raise
+            logger.info("grobid: wrote TEI %s and receipt %s", candidate, receipt_file)
             summary["n_success"] += 1
-            summary["successes"].append({"pdf": str(pdf_path), "tei": str(candidate), "paper_id": pid, "title": title})
+            summary["successes"].append({
+                "pdf": str(pdf_path), "tei": str(candidate),
+                "receipt": str(receipt_file), "paper_id": pid, "title": title,
+                "tei_sha256": receipt["tei_sha256"],
+            })
         except Exception as e:
             tb = traceback.format_exc()
             logger.exception("grobid: failed %s", pdf_path)

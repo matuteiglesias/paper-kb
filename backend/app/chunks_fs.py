@@ -411,6 +411,7 @@ def normalize_chunk(raw: dict, paper_id: str, default_index: int = 0) -> Canonic
     return CanonicalChunk(
         chunk_id=str(cid),
         paper_id=str(paper_id),
+        paper_uid=raw.get("paper_uid") or (raw.get("meta") or raw.get("metadata") or {}).get("paper_uid"),
         text=text,
         chunk_index=chunk_index,
         char_len=char_len,

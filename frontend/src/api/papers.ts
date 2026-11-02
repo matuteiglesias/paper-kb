@@ -17,6 +17,7 @@ export type SearchHit = {
   meta?: Record<string, unknown> | null;
   chunk_id?: string | null;
   paper_id?: string | null;
+  paper_uid?: string | null;
 };
 
 export type SearchResults = {
@@ -53,7 +54,28 @@ export async function fetchCorpusHealth(signal?: AbortSignal): Promise<CorpusHea
 }
 
 export async function fetchPapers(signal?: AbortSignal): Promise<PapersList> {
-  return typedGet<PapersList>("/api/papers", signal);
+  const pageSize = 200;
+  const first = await typedGet<PapersList>(`/api/papers?offset=0&limit=${pageSize}`, signal);
+  if (first.total == null || first.papers.length >= first.total) return first;
+
+  // The Workbench expects the full paper catalog; do not silently treat page 1
+  // as complete. Missing progress or duplicate IDs indicates a changed view.
+  const papers = [...first.papers];
+  const seen = new Set(papers.map((paper) => paper.paper_id));
+  while (papers.length < first.total) {
+    const batch = await typedGet<PapersList>(
+      `/api/papers?offset=${papers.length}&limit=${pageSize}`, signal
+    );
+    if (!batch.papers.length || batch.total !== first.total ||
+        batch.papers.some((paper) => seen.has(paper.paper_id))) {
+      throw new Error("Corpus listing changed during pagination; retry the request");
+    }
+    for (const paper of batch.papers) {
+      papers.push(paper);
+      seen.add(paper.paper_id);
+    }
+  }
+  return { ...first, papers };
 }
 
 export async function fetchPaper(paperId: string, signal?: AbortSignal): Promise<PaperMeta> {
